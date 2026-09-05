@@ -42,7 +42,7 @@ to the same profile guard.
 ## Writing the SQL
 
 Hibernate's implicit naming strategy picks the names these files have to match:
-`fromAccountId` becomes `from_account_id`, and an embedded `Money` flattens into
+`sourceAccountId` becomes `source_account_id`, and an embedded `Money` flattens into
 `minor_units` / `currency` with no prefix. It will not split a one-letter word off the one
 that follows it — `EntityWithoutAMigration` becomes `entity_withoutamigration`, not
 `entity_without_a_migration`.
@@ -54,5 +54,21 @@ and fails `validate` at startup. Pin the mapping with `@JdbcTypeCode(SqlTypes.VA
 the component rather than writing an H2-specific type here; this schema still has to
 survive the move to Postgres. `RecordAsEmbeddableSpikeTest` holds the evidence.
 
+**Never write `in (…)` in a `check` constraint.** H2 compiles a constant `in` list into a
+set ordered by *the session that parsed the DDL*, and evaluating the constraint later asks
+that session for its comparison mode. Flyway's connection is closed by then, so every
+insert into the table fails — valid rows included — with
+`Check constraint invalid: "TRANSFERS_STATUS_IS_KNOWN: "`, which names the constraint and
+reads exactly like a row that broke the rule. The migration applies, `validate` passes and
+the application starts, so nothing goes wrong until the first write. An `or` chain of
+equalities on one column folds into the same set and fails identically, and so does an
+integer list.
+
+Write `status = any (array['PENDING', 'SETTLED', 'REJECTED', 'EXPIRED'])` instead, as
+`V2__transfers.sql` does: it survives the connection closing, reads almost exactly like
+`in`, and is a shape Postgres takes too. A single `=`, a `between` and a column-to-column
+comparison are all safe as well, which is why `V1__accounts.sql` never met this.
+
 Design decision 29 has the reasoning behind all of this, and the alternatives that were
-rejected, for as long as that file is around.
+rejected, for as long as those files are around; ticket 11's record has every constraint
+shape that was measured.

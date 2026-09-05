@@ -31,6 +31,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | [08 — the Account entity](08-account-entity.md) | the identifier no section had chosen; why a `record` entity boots and then fails; two invariants in the table |
 | [09 — creating an Account](09-create-account-endpoint.md) | why a typed `Currency` forced ticket 05's contract to widen; the Jackson default that truncates 100.50 into 100 |
 | [10 — listing Accounts, and seed data](10-list-accounts-and-seed.md) | the service §30's tree omits and its own rule requires; two slice tests that assumed an empty scan root |
+| [11 — the Transfer entity](11-transfer-entity.md) | `in (…)` in a check constraint is broken on H2; Accounts by ID rather than by association; one timestamp, not two |
 
 ## The initial decisions, section by section
 
@@ -42,7 +43,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | §4 | [Request handling is three phases](00-initial-decisions.md#4-request-handling-is-three-phases) | — |
 | §5 | [Duplicate resolution](00-initial-decisions.md#5-duplicate-resolution) | — |
 | §6 | [Concurrency: pessimistic locks in a deterministic order](00-initial-decisions.md#6-concurrency-pessimistic-locks-in-a-deterministic-order) | — |
-| §7 | [Transfers have an asynchronous lifecycle](00-initial-decisions.md#7-transfers-have-an-asynchronous-lifecycle) | — |
+| §7 | [Transfers have an asynchronous lifecycle](00-initial-decisions.md#7-transfers-have-an-asynchronous-lifecycle) | [11](11-transfer-entity.md) |
 | §8 | [Orchestration, driven by a per-transfer check ledger](00-initial-decisions.md#8-orchestration-driven-by-a-per-transfer-check-ledger) | — |
 | §9 | [Verdicts arrive by inbound HTTP callback](00-initial-decisions.md#9-verdicts-arrive-by-inbound-http-callback) | — |
 | §10 | [Internal endpoints sit behind a shared secret](00-initial-decisions.md#10-internal-endpoints-sit-behind-a-shared-secret) | — |
@@ -64,8 +65,8 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | §26 | [Frontend API types are generated from OpenAPI](00-initial-decisions.md#26-frontend-api-types-are-generated-from-openapi) | [01](01-project-skeleton.md) |
 | §27 | [The flaky FX provider: timeouts, retry, then fail to the caller](00-initial-decisions.md#27-the-flaky-fx-provider-timeouts-retry-then-fail-to-the-caller) | — |
 | §28 | [The mock FX provider is a real HTTP endpoint inside the app](00-initial-decisions.md#28-the-mock-fx-provider-is-a-real-http-endpoint-inside-the-app) | — |
-| §29 | [Maven, Flyway, and `ddl-auto=validate`](00-initial-decisions.md#29-maven-flyway-and-ddl-autovalidate) | [01](01-project-skeleton.md), [02](02-flyway-wiring.md), [06](06-money-and-currency.md), [08](08-account-entity.md), [10](10-list-accounts-and-seed.md) |
-| §30 | [Package-by-feature](00-initial-decisions.md#30-package-by-feature) | [03](03-package-skeleton-archunit.md), [07](07-conversion-function.md), [09](09-create-account-endpoint.md), [10](10-list-accounts-and-seed.md) |
+| §29 | [Maven, Flyway, and `ddl-auto=validate`](00-initial-decisions.md#29-maven-flyway-and-ddl-autovalidate) | [01](01-project-skeleton.md), [02](02-flyway-wiring.md), [06](06-money-and-currency.md), [08](08-account-entity.md), [10](10-list-accounts-and-seed.md), [11](11-transfer-entity.md) |
+| §30 | [Package-by-feature](00-initial-decisions.md#30-package-by-feature) | [03](03-package-skeleton-archunit.md), [07](07-conversion-function.md), [09](09-create-account-endpoint.md), [10](10-list-accounts-and-seed.md), [11](11-transfer-entity.md) |
 | §31 | [Residual API decisions](00-initial-decisions.md#31-residual-api-decisions) | [09](09-create-account-endpoint.md), [10](10-list-accounts-and-seed.md) |
 
 Sections with no ticket against them have not been revisited since they were

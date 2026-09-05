@@ -199,6 +199,9 @@ The reasoning, what it cost, and the rejected alternatives are in
 a fresh reader would otherwise "simplify" back to synchronous. Sections 8–15
 below are its mechanics.
 
+> **Built in [ticket 11](11-transfer-entity.md)**, which put the four states in a
+> table and left every transition to the ticket that has a caller for it.
+
 ---
 
 ## 8. Orchestration, driven by a per-transfer check ledger
@@ -930,6 +933,8 @@ suite too.
 > it, and settled the question ticket 06 left open about `@AttributeOverride`.
 > **[Ticket 10](10-list-accounts-and-seed.md)** built the `@Profile("dev")` runner
 > the last paragraph asks for, and both halves of the assertion that holds it there.
+> **[Ticket 11](11-transfer-entity.md)** found that `in (…)` in a `check`
+> constraint is broken on H2 in a way every startup gate passes.
 
 ---
 

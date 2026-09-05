@@ -13,33 +13,43 @@ services.
 
 ## Requirements
 
-**A JDK 21 or newer, and nothing else.** No Docker, no database to install, no Maven —
-`./mvnw` downloads the version it needs on first run.
+**A JDK 21 or newer** for the backend, and no Docker, no database to install and no
+Maven — `./mvnw` downloads the version it needs on first run.
 
 ```bash
 java -version   # must be 21+
 ```
 
-The frontend is not built yet. When it arrives it will need Node (see `.nvmrc`) and run
-as a second process.
+**Node for the frontend**, at the version in [`.nvmrc`](.nvmrc). It runs as a second
+process, which is the price of not adding a second production runtime beside the JVM;
+see [`frontend/README.md`](frontend/README.md).
 
 ## Run the tests
 
 ```bash
-./mvnw test
+./mvnw test               # backend
+cd frontend && npm test   # frontend
 ```
 
-Expect **87 passing tests** and no Docker daemon involved. The suite runs on an in-memory
-H2 database; Testcontainers was rejected precisely so this command works on a clean
-machine.
+Expect **106 passing backend tests** and **6 in the frontend**, with no Docker daemon
+involved. The backend suite runs on an in-memory H2 database; Testcontainers was rejected
+precisely so this command works on a clean machine.
 
 ## Run the application
 
+Two processes, in two terminals.
+
 ```bash
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev   # http://localhost:8080
 ```
 
-It starts on **http://localhost:8080**.
+```bash
+cd frontend && npm install && npm run dev               # http://localhost:5173
+```
+
+**http://localhost:5173 is the application**; the backend on 8080 is what it talks to,
+and the dev server proxies `/api` and `/internal` there so the browser stays on one
+origin. [`frontend/README.md`](frontend/README.md) has the frontend's own details.
 
 **The `dev` profile is what puts demo accounts in the database**, and it is opt-in on
 purpose. Without the flag the application starts empty — which is what the test suite gets,
@@ -315,7 +325,7 @@ package-private; the `@Transactional` *method* stays public.
 
 ```
 pom.xml, src/               the Spring Boot application
-frontend/                   the React app (not yet created)
+frontend/                   the React app, with its own README
 CONTEXT.md                  domain vocabulary — the words this codebase uses
 docs/design-decisions/      what was chosen, why, and what was rejected
 docs/deferred.md            what was consciously left out, and what it would take

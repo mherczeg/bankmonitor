@@ -28,11 +28,11 @@ reducer before a library.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `npm run dev` serves the app and `npm run build` type-checks it
-- [ ] Four routes resolve, with placeholder content
-- [ ] TypeScript `strict` is on and the generated-route-tree decision is recorded
-- [ ] Query retry is narrowed to `5xx`, with a comment naming the two failures it prevents
-- [ ] Bootstrap CSS is imported once, with no JS bundle, and CSS Modules work
-- [ ] The dev proxy passes the event stream through unbuffered
+- [x] `npm run dev` serves the app and `npm run build` type-checks it
+- [x] Four routes resolve, with placeholder content
+- [x] TypeScript `strict` is on and the generated-route-tree decision is recorded
+- [x] Query retry is narrowed to `5xx`, with a comment naming the two failures it prevents
+- [x] Bootstrap CSS is imported once, with no JS bundle, and CSS Modules work
+- [x] The dev proxy passes the event stream through unbuffered

@@ -27,6 +27,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | [04 — security chain and CORS](04-security-chain-cors.md) | deny-by-default, and three rejected alternatives |
 | [05 — problem detail contract](05-problem-detail-contract.md) | why `spring.mvc.problemdetails.enabled` is absent; URN chosen from status, not exception |
 | [06 — money and currency](06-money-and-currency.md) | `Money`'s four-method surface; two corrections to §29's mapping assumptions |
+| [07 — the conversion function](07-conversion-function.md) | round-to-zero as a sealed outcome, not an empty `Optional`; why it lives in `fx`; the rate guard the shape needed |
 
 ## The initial decisions, section by section
 
@@ -47,7 +48,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | §13 | [Balances: two fields on `Account`](00-initial-decisions.md#13-balances-two-fields-on-account) | — |
 | §14 | [Unanswered checks expire](00-initial-decisions.md#14-unanswered-checks-expire) | — |
 | §15 | [The FX rate is locked at request time](00-initial-decisions.md#15-the-fx-rate-is-locked-at-request-time) | — |
-| §16 | [Money is a `long` count of minor units](00-initial-decisions.md#16-money-is-a-long-count-of-minor-units) | [01](01-project-skeleton.md), [06](06-money-and-currency.md) |
+| §16 | [Money is a `long` count of minor units](00-initial-decisions.md#16-money-is-a-long-count-of-minor-units) | [01](01-project-skeleton.md), [06](06-money-and-currency.md), [07](07-conversion-function.md) |
 | §17 | [One event stream, thin events, no catch-up](00-initial-decisions.md#17-one-event-stream-thin-events-no-catch-up) | — |
 | §18 | [Errors are RFC 9457 `ProblemDetail`](00-initial-decisions.md#18-errors-are-rfc-9457-problemdetail) | [05](05-problem-detail-contract.md) |
 | §19 | [The Transactions list shows every status](00-initial-decisions.md#19-the-transactions-list-shows-every-status) | — |
@@ -61,7 +62,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | §27 | [The flaky FX provider: timeouts, retry, then fail to the caller](00-initial-decisions.md#27-the-flaky-fx-provider-timeouts-retry-then-fail-to-the-caller) | — |
 | §28 | [The mock FX provider is a real HTTP endpoint inside the app](00-initial-decisions.md#28-the-mock-fx-provider-is-a-real-http-endpoint-inside-the-app) | — |
 | §29 | [Maven, Flyway, and `ddl-auto=validate`](00-initial-decisions.md#29-maven-flyway-and-ddl-autovalidate) | [01](01-project-skeleton.md), [02](02-flyway-wiring.md), [06](06-money-and-currency.md) |
-| §30 | [Package-by-feature](00-initial-decisions.md#30-package-by-feature) | [03](03-package-skeleton-archunit.md) |
+| §30 | [Package-by-feature](00-initial-decisions.md#30-package-by-feature) | [03](03-package-skeleton-archunit.md), [07](07-conversion-function.md) |
 | §31 | [Residual API decisions](00-initial-decisions.md#31-residual-api-decisions) | — |
 
 Sections with no ticket against them have not been revisited since they were

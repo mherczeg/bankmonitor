@@ -28,11 +28,11 @@ one finishes before thread two starts and the race never happens.
 
 **Blocked by:** 11, 12
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Reserving raises the source Account's Reserved Amount and moves no money
-- [ ] The Available Balance check happens after the locks are held
-- [ ] A Transfer exceeding Available Balance is refused and nothing is written
-- [ ] Concurrent Transfers out of one Account: exactly one succeeds, balance never negative
-- [ ] Opposing Transfers between one pair of Accounts do not deadlock
-- [ ] The concurrency tests are non-transactional and use a latch to force the overlap
+- [x] Reserving raises the source Account's Reserved Amount and moves no money
+- [x] The Available Balance check happens after the locks are held
+- [x] A Transfer exceeding Available Balance is refused and nothing is written
+- [x] Concurrent Transfers out of one Account: exactly one succeeds, balance never negative
+- [x] Opposing Transfers between one pair of Accounts do not deadlock
+- [x] The concurrency tests are non-transactional and use a latch to force the overlap

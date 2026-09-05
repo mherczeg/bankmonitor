@@ -190,6 +190,8 @@ writes inside one request, that is what the database is for.
 > **Built in [ticket 12](12-ordered-account-locking.md)**, which settled where
 > the order lives — two locking statements rather than one ordered query — and
 > what evidence there can be for it before ticket 13 has two threads.
+> **[Ticket 13](13-reserve-funds.md)** has the two threads, and records what a
+> test has to do before they prove anything.
 
 ---
 
@@ -328,6 +330,9 @@ independently. Deferred deliberately — see [deferred.md](../deferred.md).
 > **[Ticket 10](10-list-accounts-and-seed.md)** puts the derived Available Balance
 > on the wire, and records why the endpoint that reports it cannot be tested with
 > a mocked service.
+> **[Ticket 13](13-reserve-funds.md)** adds the increment, and records why the
+> overdraft refusal lives on `Account` rather than in the service that holds the
+> lock.
 
 ---
 

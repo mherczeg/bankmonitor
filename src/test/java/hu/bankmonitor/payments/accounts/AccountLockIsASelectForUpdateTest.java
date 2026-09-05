@@ -2,25 +2,18 @@ package hu.bankmonitor.payments.accounts;
 
 import hu.bankmonitor.payments.common.Currency;
 import hu.bankmonitor.payments.common.Money;
-import org.hibernate.cfg.AvailableSettings;
+import hu.bankmonitor.testsupport.CapturingStatementInspector;
 import org.hibernate.resource.jdbc.spi.StatementInspector;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.hibernate.autoconfigure.HibernatePropertiesCustomizer;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -45,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @TestPropertySource(properties =
 		// The application's own setting; the slice would otherwise export the schema itself.
 		"spring.jpa.hibernate.ddl-auto=validate")
-@Import(AccountLocking.class)
+@Import({AccountLocking.class, CapturingStatementInspector.class})
 class AccountLockIsASelectForUpdateTest {
 
 	@Autowired
@@ -98,35 +91,4 @@ class AccountLockIsASelectForUpdateTest {
 		return entityManager.persistAndGetId(new Account(openingBalance), Long.class);
 	}
 
-	/**
-	 * Hibernate hands every statement to a {@link StatementInspector} on its way to the
-	 * driver, which is the only place the {@code for update} suffix is visible: it is
-	 * appended by the dialect, so neither the entity nor the repository method mentions
-	 * it.
-	 */
-	@TestConfiguration(proxyBeanMethods = false)
-	static class CapturingStatementInspector implements HibernatePropertiesCustomizer, StatementInspector {
-
-		private final List<String> statements = new CopyOnWriteArrayList<>();
-
-		@Override
-		public void customize(Map<String, Object> hibernateProperties) {
-			hibernateProperties.put(AvailableSettings.STATEMENT_INSPECTOR, this);
-		}
-
-		@Override
-		public String inspect(String sql) {
-			statements.add(sql.toLowerCase(Locale.ROOT).trim());
-			return sql;
-		}
-
-		List<String> captured() {
-			return List.copyOf(statements);
-		}
-
-		/** The context is cached across tests, so the inspector outlives any one of them. */
-		void forget() {
-			statements.clear();
-		}
-	}
 }

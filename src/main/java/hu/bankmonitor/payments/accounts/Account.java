@@ -87,4 +87,29 @@ public class Account {
 	public Currency getCurrency() {
 		return balance.currency();
 	}
+
+	/**
+	 * Commits part of the Available Balance to a Transfer that has not settled: the Reserved
+	 * Amount rises by the amount, the balance does not move, and nothing is credited
+	 * anywhere. Settling the Transfer lowers both figures; rejecting or expiring it lowers
+	 * only the Reserved Amount.
+	 *
+	 * <p>The refusal lives here rather than in the caller, so that there is no way to reach a
+	 * balance and overdraw it. What does <em>not</em> live here is whether it was safe to
+	 * ask: this method compares two figures it was handed, and that the Account's row is
+	 * locked while it does so is the caller's obligation — design decision 6 is why. Called
+	 * against an unlocked Account the arithmetic is still right and the answer is still
+	 * worthless, because another transaction may have spent the same Available Balance in
+	 * between.
+	 *
+	 * @throws InsufficientFundsException if the Available Balance does not cover the amount
+	 * @throws IllegalArgumentException   if the amount is in another Currency
+	 */
+	public void reserve(Money amount) {
+		Money availableBalance = getAvailableBalance();
+		if (availableBalance.isLessThan(amount)) {
+			throw new InsufficientFundsException(availableBalance, amount);
+		}
+		reservedAmount = reservedAmount.plus(amount);
+	}
 }

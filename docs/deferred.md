@@ -231,6 +231,35 @@ and the reason the two are deferred together.
 
 ---
 
+## Cross-currency transfers are reserved in the source account's currency
+
+**Deferred.** `FundsReservation` denominates both sides of a transfer with the
+source account's currency. Between two accounts in different currencies that is
+wrong on the credited side: the row records, say, 100.00 EUR arriving at a HUF
+account. Nothing refuses it.
+
+**Why deferred:** the correct answer to a cross-currency transfer is not a
+refusal, it is a conversion, and the conversion is ticket 26's — §15 locks an
+exchange rate at request time and the credited amount is the debited amount at
+that rate. A refusal added in ticket 13 would be a rule ticket 26 has to
+reinterpret rather than delete, and ticket 13's brief is the concurrency claim.
+
+**Residual risk, and it is real:** until ticket 26 lands, the reservation path
+accepts a cross-currency transfer and writes a `PENDING` row that would settle
+into the wrong money. The source account's own books stay right — the amount
+reserved against it is in its own currency and the overdraft check is sound —
+so the error is entirely on the destination side, which is the half nothing yet
+reads.
+
+**What it would take:** ticket 26, where the rate is fetched in the phase before
+the transaction (§4) and the credited amount stops being a copy of the debited
+one. A sooner stopgap would be ticket 14 refusing the request at the endpoint,
+on an unlocked read of the two accounts. That read is advisory rather than
+load-bearing, so it does not violate §6 — but it is a check that has to be
+deleted again in 26, which is the argument for not writing it.
+
+---
+
 ## Verifying the locking design against Postgres
 
 **Deferred.** The concurrency tests run on H2 (design decisions §25), which

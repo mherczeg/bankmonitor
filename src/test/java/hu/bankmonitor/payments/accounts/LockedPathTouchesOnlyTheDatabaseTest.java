@@ -76,17 +76,26 @@ class LockedPathTouchesOnlyTheDatabaseTest {
 			"hu.bankmonitor.payments.mockfx..");
 
 	/**
-	 * Every operation that takes these row locks, which today is the one that exports them.
+	 * Every operation that takes these row locks: the one that exports them, and the
+	 * reservation that opens the transaction they are held in.
 	 *
 	 * <p>Deliberately not "everything that calls {@link AccountLocking}". The caller is
 	 * where the transaction is opened, so widening this to callers looks stricter and is
-	 * wrong: ticket 13's service will legitimately hold an Exchange Rate port and call it
-	 * in the phase <em>before</em> the transaction, which is precisely what design decision
-	 * 4 asks for, and this rule cannot tell the two phases apart. Ticket 13 adds its own
-	 * transactional method here, and ticket 26 asserts the phase ordering the other way, in
+	 * wrong: ticket 26 gives {@code FundsReservation} an Exchange Rate port to call in the
+	 * phase <em>before</em> the transaction, which is precisely what design decision 4 asks
+	 * for, and this rule cannot tell the two phases apart. When that arrives the entry below
+	 * has to come out, and ticket 26 asserts the phase ordering the other way, in
 	 * {@code transfers}.
+	 *
+	 * <p>Class names rather than {@code Class} literals, because {@code FundsReservation} is
+	 * package-private in {@code transfers} by §30 and so cannot be named from this package —
+	 * which is the boundary working, not an obstacle to route around by widening its
+	 * visibility for a test. A name that matches nothing fails loudly in
+	 * {@link JavaClasses#get(String)} rather than quietly asserting over an empty set.
 	 */
-	private static final List<Class<?>> LOCK_HOLDERS = List.of(AccountLocking.class);
+	private static final List<String> LOCK_HOLDERS = List.of(
+			AccountLocking.class.getName(),
+			"hu.bankmonitor.payments.transfers.FundsReservation");
 
 	@Test
 	@DisplayName("the operation that holds the locks reaches nothing but the database")
@@ -125,7 +134,7 @@ class LockedPathTouchesOnlyTheDatabaseTest {
 		JavaClasses violation = new ClassFileImporter()
 				.importPackages("hu.bankmonitor.testsupport.boundaryviolations.lockedpath");
 
-		assertThat(ioReachableFrom(LockHolder.class, violation))
+		assertThat(ioReachableFrom(LockHolder.class.getName(), violation))
 				.as("the reach is real, and it is attributed to the class one hop down")
 				.contains("ExchangeRateLookup depends on org.springframework.web.client.RestClient")
 				.allSatisfy(reach -> assertThat(reach).startsWith("ExchangeRateLookup depends on"));
@@ -135,7 +144,7 @@ class LockedPathTouchesOnlyTheDatabaseTest {
 	 * Every forbidden dependency of every class the lock holder can reach, as text a
 	 * failure message can name the culprit with.
 	 */
-	private static List<String> ioReachableFrom(Class<?> lockHolder, JavaClasses ourClasses) {
+	private static List<String> ioReachableFrom(String lockHolder, JavaClasses ourClasses) {
 		return reachableFrom(ourClasses.get(lockHolder), ourClasses).stream()
 				.flatMap(onThePath -> onThePath.getDirectDependenciesFromSelf().stream())
 				.filter(dependency -> IO_BEYOND_THE_DATABASE.test(targetOf(dependency)))

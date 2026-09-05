@@ -42,6 +42,12 @@
 			<version>${springdoc.version}</version>
 		</dependency>
 
+		<!-- Owns the schema. Not `org.flywaydb:flyway-core`, which Boot 4 leaves
+		     unconfigured and therefore silent (design decision 29). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-flyway</artifactId>
+		</dependency>
 		<!-- Runs the app and the tests alike; Testcontainers was rejected so
 		     `./mvnw test` needs no Docker daemon (design decision 25). -->
 		<dependency>

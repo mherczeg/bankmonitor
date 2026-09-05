@@ -29,7 +29,7 @@ as a second process.
 ./mvnw test
 ```
 
-Expect **8 passing tests** and no Docker daemon involved. The suite runs on an in-memory
+Expect **11 passing tests** and no Docker daemon involved. The suite runs on an in-memory
 H2 database; Testcontainers was rejected precisely so this command works on a clean
 machine.
 
@@ -59,8 +59,8 @@ correct for the current state of the build.
 
 ## What is built so far
 
-Ticket 01 of 44: the skeleton, and the two ecosystem bets that had to be settled before
-writing domain code against them. **Both won.**
+Tickets 01–02 of 44: the skeleton, schema management, and the two ecosystem bets that had
+to be settled before writing domain code against them. **Both won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` and `Account` are both
    records by design; if Hibernate could not instantiate one through its canonical
@@ -74,6 +74,14 @@ Both are proved by tests in the repo rather than by reading changelogs:
 ```bash
 ./mvnw test -Dtest='*SpikeTest'
 ```
+
+**Flyway owns the schema** and Hibernate runs on `ddl-auto=validate`, from before the
+first table exists rather than baselined at the end. There are no migrations yet — each
+slice ships the one for the table it introduces, a convention written down in
+[`src/main/resources/db/migration/README.md`](src/main/resources/db/migration/README.md).
+What is already load-bearing is that an entity with no table behind it fails startup
+naming the table Hibernate went looking for, which `FlywayOwnsTheSchemaTest` proves by
+booting the application with exactly that mistake in it.
 
 **Virtual threads are on** (`spring.threads.virtual.enabled=true`), and they are
 load-bearing rather than a nicety. The stand-in Exchange Rate provider is a real HTTP

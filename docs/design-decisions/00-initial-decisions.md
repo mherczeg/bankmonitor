@@ -398,7 +398,9 @@ Hibernate 7, but a wrong assumption here re-shapes every entity.
 
 > **Confirmed in [ticket 01](01-project-skeleton.md)** and **built in
 > [ticket 06](06-money-and-currency.md)**, with a surface deliberately smaller
-> than the type could support.
+> than the type could support. The conversion above is
+> **[ticket 07](07-conversion-function.md)**, which settled what it returns when
+> the result rounds to zero.
 
 ---
 
@@ -955,6 +957,8 @@ package-private; the **`@Transactional` method** stays public.
 
 > **Built in [ticket 03](03-package-skeleton-archunit.md)**, where the ArchUnit
 > rules needed violation fixtures to be worth anything.
+> **[Ticket 07](07-conversion-function.md)** adds to the `fx/` line above: the
+> package exports a second public type beside the port, though not a second port.
 
 ---
 

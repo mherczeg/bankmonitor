@@ -29,7 +29,7 @@ as a second process.
 ./mvnw test
 ```
 
-Expect **76 passing tests** and no Docker daemon involved. The suite runs on an in-memory
+Expect **87 passing tests** and no Docker daemon involved. The suite runs on an in-memory
 H2 database; Testcontainers was rejected precisely so this command works on a clean
 machine.
 
@@ -49,7 +49,8 @@ test that reads the accounts table would then start from someone else's fixtures
 
 | Endpoint | What it is |
 |---|---|
-| [`/api/accounts`](http://localhost:8080/api/accounts) | Every account, with its balance and its Available Balance |
+| [`GET /api/accounts`](http://localhost:8080/api/accounts) | Every account, with its balance and its Available Balance |
+| `POST /api/accounts` | Opens an Account in a given Currency with a starting balance |
 | [`/actuator/health`](http://localhost:8080/actuator/health) | Health check, including H2 connectivity |
 | [`/v3/api-docs`](http://localhost:8080/v3/api-docs) | The OpenAPI document the frontend's types are generated from |
 | [`/swagger-ui/index.html`](http://localhost:8080/swagger-ui/index.html) | Browsable API |
@@ -66,18 +67,27 @@ $ curl -s localhost:8080/api/accounts
  ...
  {"id":5,"currency":"HUF","balanceMinorUnits":250000,
   "reservedAmountMinorUnits":0,"availableBalanceMinorUnits":250000}]
+
+$ curl -s -X POST localhost:8080/api/accounts -H 'Content-Type: application/json' \
+    -d '{"currency":"EUR","openingBalanceMinorUnits":10050}'
+{"id":6,"currency":"EUR","balanceMinorUnits":10050,
+ "reservedAmountMinorUnits":0,"availableBalanceMinorUnits":10050}
 ```
 
 Those two `250000`s are the same number and not the same amount — €2,500.00 and 250,000 Ft.
 That is the point of the `MinorUnits` suffix, and the reason the demo set includes HUF.
 
+That is the whole business API so far; the rest of `/v3/api-docs` is still ahead of the
+build.
+
 ## What is built so far
 
-Tickets 01–08 and 10 of 44: the skeleton, schema management, the package structure the
-domain code will be written into, the security chain in front of it, the error contract
-every endpoint will answer with, the value type every amount in the system is expressed in
-and the single conversion between currencies, the first entity and the first table, the
-first endpoint, and the two ecosystem bets that had to be settled first. **Both bets won.**
+Tickets 01–10 of 44: the skeleton, schema management, the package structure the domain
+code will be written into, the security chain in front of it, the error contract every
+endpoint will answer with, the value type every amount in the system is expressed in and
+the single conversion between currencies, the first entity and the first table, the first
+endpoint that writes to it and the first that reads it back, and the two ecosystem bets
+that had to be settled first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type
@@ -122,6 +132,27 @@ fixed when the account is opened. A second constraint keeps the Reserved Amount 
 zero and the balance: the overdraft refusal itself belongs in the service, under the lock,
 where it can reach the caller as a `422`, and this is what makes a route around it a
 failed write rather than an overdrawn account.
+
+**`POST /api/accounts` opens one, and amounts cross the wire as an integer count of Minor
+Units in a field whose name says so** — `openingBalanceMinorUnits`, never
+`openingBalance`. `10050` in a field called `openingBalance` reads as ten thousand and
+fifty euros to one caller and as a hundred euros fifty to the next; the suffix leaves one
+reading, and the decimal form an operator types belongs to the form, which converts it
+before it leaves the browser. The name alone is not the whole guard: **Jackson's default
+is to truncate a decimal into an integer field**, so `100.50` would have opened a euro
+account holding 100 cents with a `201` and no warning. `spring.jackson.deserialization.accept-float-as-int=false`
+makes it a rejected field instead, and the measured before-and-after is in
+[the ticket's design record](docs/design-decisions/09-create-account-endpoint.md).
+
+The currency crosses as the `Currency` enum rather than a string, so the three
+denominations this service can quote are a closed set in the OpenAPI document too and the
+frontend picks the same list up rather than restating it. The cost is that Jackson refuses
+an unknown name *before* Bean Validation runs, which would have made a bad currency an
+unreadable-body error with no field in it; the error contract below now reports a body
+Jackson rejected **at a member** as a validation failure naming that member. The response
+carries all three balance figures and no `Location` header — there is no single-Account
+resource for one to address, and the body carries the identifier. Both are in
+[`docs/deferred.md`](docs/deferred.md).
 
 **`GET /api/accounts` is the first business endpoint**, and it reports three figures from
 two stored ones: the Available Balance is subtracted on the way out, never persisted, so no
@@ -212,7 +243,7 @@ The implementation is Spring's own `ResponseEntityExceptionHandler`, not a hand-
 envelope. Spring already answers `@Valid` rejections, `415`, `405` and malformed JSON
 with problem documents *before* any controller code runs, so a custom shape would not
 replace those responses — it would ship a second error format beside one that cannot be
-switched off. `ProblemDocumentAdvice` adopts them and adds four things:
+switched off. `ProblemDocumentAdvice` adopts them and adds five things:
 
 | Addition | Why |
 |---|---|
@@ -220,6 +251,7 @@ switched off. `ProblemDocumentAdvice` adopts them and adds four things:
 | `errors: [{ field, message }]` on a validation failure | The default packs every violation into one sentence in `detail`, which no form can mark up against the input that caused it. A rejected parameter carries the member too, so the shape does not depend on whether the bad value arrived in the body. Sorted, because Bean Validation promises no order. |
 | A `500` document for anything unhandled | Otherwise the request leaves the dispatcher for Boot's `/error` page — a different shape, derived from the exception, saying more about this server than a caller should learn. Its `detail` is a fixed sentence. |
 | `Retry-After` where retrying will help, and nowhere else | The retryable case is then machine-readably marked as such: the in-progress `409` and the exhausted FX provider's `503` carry it; the key-reuse `409` never does. |
+| The same `errors` breakdown for a value the **deserializer** refused | An unknown enum name or a decimal in a whole-number field fails before any constraint runs, and Spring reports every unreadable body as `urn:problem:malformed-request` with nothing in it. A failure carrying a *path* — a location inside the document — is a well-formed request with one bad member, and is reported as a validation failure naming it. JSON that does not parse has no path and stays malformed. One caveat the client can see: Jackson stops at the first such member, so this list holds one entry where a constraint failure holds every violation. |
 
 `ProblemDocumentContractTest` runs the whole contract at the web layer with no database
 behind it, putting every case through one assertion helper — which is what makes "a

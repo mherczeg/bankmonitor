@@ -117,6 +117,29 @@ class ProblemDocumentContractTest {
 		assertThatIsAProblemDocument(result, ProblemType.MALFORMED_REQUEST);
 	}
 
+	/**
+	 * The line between the two: JSON that does not parse is unreadable, while JSON that
+	 * parses into a value the field will not take is a rejected field, and a client told
+	 * the second is the first goes looking for a missing brace. The deserializer stops at
+	 * the first such value, so this document names one field where a constraint failure
+	 * would name every one.
+	 */
+	@Test
+	@DisplayName("a value the deserializer will not take is a rejected field, not a malformed body")
+	void rejectedValueIsReportedAgainstItsField() {
+		MvcTestResult result = mvc.post().uri(ProblemProbeController.PATH)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"reference": "ok", "weight": "heavy"}""")
+				.exchange();
+
+		assertThat(result).hasStatus(400);
+		assertThatIsAProblemDocument(result, ProblemType.VALIDATION_FAILED);
+		assertThat(result).bodyJson()
+				.extractingPath("$.errors[*].field").asInstanceOf(LIST)
+				.containsExactly("weight");
+	}
+
 	@Test
 	@DisplayName("an unsupported media type is a problem document")
 	void unsupportedMediaTypeIsAProblemDocument() {

@@ -46,7 +46,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 		// in db/migration, which Flyway owns for the schema the application runs on.
 		"spring.flyway.locations=classpath:db/testmigration/moneymapping",
 		// The application's own setting, restated because the claim below rests on it.
-		"spring.jpa.hibernate.ddl-auto=validate"
+		"spring.jpa.hibernate.ddl-auto=validate",
+		// The entity scan above is narrowed to the host, but repository scanning is not,
+		// and a repository for an entity this context does not manage fails the context.
+		"spring.data.jpa.repositories.enabled=false"
 })
 class MoneyMapsToTwoColumnsTest {
 

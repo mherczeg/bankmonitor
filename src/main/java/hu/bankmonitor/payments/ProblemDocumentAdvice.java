@@ -20,11 +20,16 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import tools.jackson.core.JacksonException.Reference;
+import tools.jackson.databind.exc.MismatchedInputException;
 
+import java.math.BigInteger;
 import java.net.URI;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -63,6 +68,19 @@ class ProblemDocumentAdvice extends ResponseEntityExceptionHandler {
 
 	private static final String NO_ENDPOINT_DETAIL = "This API has no endpoint at that path.";
 
+	/** Spring's own wording for a body that failed its constraints, reused where a body failed the deserializer. */
+	private static final String INVALID_CONTENT_DETAIL = "Invalid request content.";
+
+	private static final String INVALID_VALUE = "Invalid value.";
+
+	/**
+	 * The types a JSON number has to be whole for. Every amount in this API is a count of
+	 * Minor Units, so a decimal arriving in one of these is a category error rather than a
+	 * rounding question.
+	 */
+	private static final Set<Class<?>> WHOLE_NUMBER_TYPES = Set.of(
+			long.class, Long.class, int.class, Integer.class, short.class, Short.class, BigInteger.class);
+
 	/**
 	 * One violation, against the field that carries it. A violation from a class-level
 	 * rule belongs to the request rather than to one input, and reports a null field.
@@ -89,6 +107,41 @@ class ProblemDocumentAdvice extends ResponseEntityExceptionHandler {
 			HttpHeaders headers, HttpStatusCode status, WebRequest request) {
 		return amend(super.handleHandlerMethodValidationException(exception, headers, status, request),
 				problem -> problem.setProperty(VALIDATION_ERRORS, violationsIn(exception)));
+	}
+
+	/**
+	 * A body the deserializer could read but could not accept — an unknown enum name, a
+	 * decimal where a whole count belongs — reported against the member that carried it,
+	 * as any other rejected value is.
+	 *
+	 * <p>Spring answers every unreadable body with {@code MALFORMED_REQUEST}, which is
+	 * right for JSON that does not parse and wrong for JSON that parses into a value the
+	 * type will not take: the caller sent a well-formed document with one bad field, and
+	 * telling them the request was unreadable sends them looking for a missing brace. The
+	 * distinction is whether the failure carries a path — a location inside the document —
+	 * which only a value failure does.
+	 *
+	 * <p>Jackson stops at the first such member, so a body with two bad values names one
+	 * of them and the next attempt names the other. That is the deserializer's behaviour
+	 * rather than a choice here; constraint violations, which run once the body is built,
+	 * are still reported together.
+	 *
+	 * <p>The message is written here rather than taken from the exception: Jackson's own
+	 * text names Java types and quotes the offending document back.
+	 */
+	@Override
+	protected ResponseEntity<Object> handleHttpMessageNotReadable(HttpMessageNotReadableException exception,
+			HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+		ResponseEntity<Object> response = super.handleHttpMessageNotReadable(exception, headers, status, request);
+		if (!(exception.getCause() instanceof MismatchedInputException rejected) || rejected.getPath().isEmpty()) {
+			return response;
+		}
+		return amend(response, problem -> {
+			problem.setType(ProblemType.VALIDATION_FAILED.uri());
+			problem.setDetail(INVALID_CONTENT_DETAIL);
+			problem.setProperty(VALIDATION_ERRORS,
+					List.of(new Violation(memberPathOf(rejected), messageFor(rejected.getTargetType()))));
+		});
 	}
 
 	/**
@@ -210,7 +263,41 @@ class ProblemDocumentAdvice extends ResponseEntityExceptionHandler {
 	/** The fallback exists so that a constraint declared without a message cannot turn a 400 into a 500. */
 	private static String messageOf(MessageSourceResolvable error) {
 		String message = error.getDefaultMessage();
-		return message != null ? message : "Invalid value.";
+		return message != null ? message : INVALID_VALUE;
+	}
+
+	/**
+	 * The rejected value's position in the document, in the notation the rest of the
+	 * {@code errors} member uses: {@code currency}, {@code transfers[2].amountMinorUnits}.
+	 */
+	private static String memberPathOf(MismatchedInputException rejected) {
+		StringBuilder path = new StringBuilder();
+		for (Reference step : rejected.getPath()) {
+			if (step.getPropertyName() == null) {
+				path.append('[').append(step.getIndex()).append(']');
+			}
+			else {
+				path.append(path.isEmpty() ? "" : ".").append(step.getPropertyName());
+			}
+		}
+		return path.toString();
+	}
+
+	/**
+	 * What the field will take, said without naming a Java type. An enum lists its
+	 * constants, which is the whole of what a closed set like {@code Currency} has to say
+	 * about itself.
+	 */
+	private static String messageFor(@Nullable Class<?> target) {
+		if (target == null) {
+			return INVALID_VALUE;
+		}
+		if (target.isEnum()) {
+			return Stream.of(target.getEnumConstants())
+					.map(Object::toString)
+					.collect(Collectors.joining(", ", "must be one of: ", ""));
+		}
+		return WHOLE_NUMBER_TYPES.contains(target) ? "must be a whole number" : INVALID_VALUE;
 	}
 
 	private static @Nullable String fieldOf(MessageSourceResolvable error) {

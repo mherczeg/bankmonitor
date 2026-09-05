@@ -42,7 +42,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 		// The spike owns its schema; from ticket 02 Flyway owns the real one and there
 		// will never be a migration for this test-only table.
 		"spring.jpa.hibernate.ddl-auto=create-drop",
-		"spring.flyway.enabled=false"
+		"spring.flyway.enabled=false",
+		// The entity scan above is narrowed to the spike's host, but repository scanning is
+		// not, and a repository for an entity this context does not manage fails the context.
+		"spring.data.jpa.repositories.enabled=false"
 })
 class RecordAsEmbeddableSpikeTest {
 

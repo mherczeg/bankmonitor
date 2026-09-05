@@ -29,6 +29,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | [06 — money and currency](06-money-and-currency.md) | `Money`'s four-method surface; two corrections to §29's mapping assumptions |
 | [07 — the conversion function](07-conversion-function.md) | round-to-zero as a sealed outcome, not an empty `Optional`; why it lives in `fx`; the rate guard the shape needed |
 | [08 — the Account entity](08-account-entity.md) | the identifier no section had chosen; why a `record` entity boots and then fails; two invariants in the table |
+| [09 — creating an Account](09-create-account-endpoint.md) | why a typed `Currency` forced ticket 05's contract to widen; the Jackson default that truncates 100.50 into 100 |
 | [10 — listing Accounts, and seed data](10-list-accounts-and-seed.md) | the service §30's tree omits and its own rule requires; two slice tests that assumed an empty scan root |
 
 ## The initial decisions, section by section
@@ -50,9 +51,9 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | §13 | [Balances: two fields on `Account`](00-initial-decisions.md#13-balances-two-fields-on-account) | [08](08-account-entity.md), [10](10-list-accounts-and-seed.md) |
 | §14 | [Unanswered checks expire](00-initial-decisions.md#14-unanswered-checks-expire) | — |
 | §15 | [The FX rate is locked at request time](00-initial-decisions.md#15-the-fx-rate-is-locked-at-request-time) | — |
-| §16 | [Money is a `long` count of minor units](00-initial-decisions.md#16-money-is-a-long-count-of-minor-units) | [01](01-project-skeleton.md), [06](06-money-and-currency.md), [07](07-conversion-function.md) |
+| §16 | [Money is a `long` count of minor units](00-initial-decisions.md#16-money-is-a-long-count-of-minor-units) | [01](01-project-skeleton.md), [06](06-money-and-currency.md), [07](07-conversion-function.md), [09](09-create-account-endpoint.md) |
 | §17 | [One event stream, thin events, no catch-up](00-initial-decisions.md#17-one-event-stream-thin-events-no-catch-up) | — |
-| §18 | [Errors are RFC 9457 `ProblemDetail`](00-initial-decisions.md#18-errors-are-rfc-9457-problemdetail) | [05](05-problem-detail-contract.md) |
+| §18 | [Errors are RFC 9457 `ProblemDetail`](00-initial-decisions.md#18-errors-are-rfc-9457-problemdetail) | [05](05-problem-detail-contract.md), [09](09-create-account-endpoint.md) |
 | §19 | [The Transactions list shows every status](00-initial-decisions.md#19-the-transactions-list-shows-every-status) | — |
 | §20 | [No meta-framework: Vite + React, two processes](00-initial-decisions.md#20-no-meta-framework-vite--react-two-processes) | — |
 | §21 | [TanStack Router, and TanStack Query owns server state](00-initial-decisions.md#21-tanstack-router-and-tanstack-query-owns-server-state) | — |
@@ -64,8 +65,8 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | §27 | [The flaky FX provider: timeouts, retry, then fail to the caller](00-initial-decisions.md#27-the-flaky-fx-provider-timeouts-retry-then-fail-to-the-caller) | — |
 | §28 | [The mock FX provider is a real HTTP endpoint inside the app](00-initial-decisions.md#28-the-mock-fx-provider-is-a-real-http-endpoint-inside-the-app) | — |
 | §29 | [Maven, Flyway, and `ddl-auto=validate`](00-initial-decisions.md#29-maven-flyway-and-ddl-autovalidate) | [01](01-project-skeleton.md), [02](02-flyway-wiring.md), [06](06-money-and-currency.md), [08](08-account-entity.md), [10](10-list-accounts-and-seed.md) |
-| §30 | [Package-by-feature](00-initial-decisions.md#30-package-by-feature) | [03](03-package-skeleton-archunit.md), [07](07-conversion-function.md), [10](10-list-accounts-and-seed.md) |
-| §31 | [Residual API decisions](00-initial-decisions.md#31-residual-api-decisions) | [10](10-list-accounts-and-seed.md) |
+| §30 | [Package-by-feature](00-initial-decisions.md#30-package-by-feature) | [03](03-package-skeleton-archunit.md), [07](07-conversion-function.md), [09](09-create-account-endpoint.md), [10](10-list-accounts-and-seed.md) |
+| §31 | [Residual API decisions](00-initial-decisions.md#31-residual-api-decisions) | [09](09-create-account-endpoint.md), [10](10-list-accounts-and-seed.md) |
 
 Sections with no ticket against them have not been revisited since they were
 written — either their work has not started, or it raised nothing the design did

@@ -6,6 +6,10 @@ import hu.bankmonitor.payments.common.Currency;
  * One Account as the API reports it: what it holds, what is spoken for, and what is left
  * to spend.
  *
+ * <p><b>One representation for every endpoint that answers with an Account</b>, rather
+ * than a leaner one for the Account just created. A create response shaped differently
+ * from a list entry would hand the frontend two Account types generated from one document.
+ *
  * <p><b>One currency for all three figures</b>, rather than a currency beside each. An
  * Account is denominated once and the {@code accounts_one_currency} constraint holds the
  * table to it, so a shape carrying three currencies could express a state the database

@@ -411,6 +411,8 @@ Hibernate 7, but a wrong assumption here re-shapes every entity.
 > than the type could support. The conversion above is
 > **[ticket 07](07-conversion-function.md)**, which settled what it returns when
 > the result rounds to zero.
+> **[Ticket 09](09-create-account-endpoint.md)** puts the first such field on the
+> wire and changes the suffix above: `…MinorUnits`, not `…Minor`.
 
 ---
 
@@ -487,6 +489,9 @@ distinguished by their `type` URN (`urn:problem:request-in-progress` vs
 
 > **Built in [ticket 05](05-problem-detail-contract.md)**, with five things the
 > ticket did not ask for and that the implementation needed anyway.
+> **[Ticket 09](09-create-account-endpoint.md)** widens that ticket's rule: a
+> body Jackson rejected *at a member* is a validation failure with an `errors`
+> entry, not `urn:problem:malformed-request`.
 
 ---
 
@@ -979,6 +984,10 @@ package-private; the **`@Transactional` method** stays public.
 > **[Ticket 10](10-list-accounts-and-seed.md)** adds an `AccountService` to the
 > `accounts/` line, which the tree omits and this section's own ArchUnit rule
 > requires.
+> **[Ticket 09](09-create-account-endpoint.md)** builds the write path into it in
+> the shape the trap above prescribes — package-private class, public
+> `@Transactional` method — against a repository declaring only the methods the
+> slice calls.
 
 ---
 
@@ -996,4 +1005,7 @@ package-private; the **`@Transactional` method** stays public.
 > **[Ticket 10](10-list-accounts-and-seed.md)** settles the listing's wire shape
 > against the immutable currency above: one `currency` field for all three
 > figures, and a bare array rather than an envelope.
+> **Account creation is built in [ticket 09](09-create-account-endpoint.md)**,
+> whose `201` carries no `Location` header because no single-Account resource
+> exists for one to address.
 

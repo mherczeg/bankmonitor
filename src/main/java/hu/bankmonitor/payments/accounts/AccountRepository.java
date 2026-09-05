@@ -12,8 +12,8 @@ import java.util.List;
  * which declares nothing, so every method here has a call site today. {@code CrudRepository}
  * would hand the slice {@code delete}, {@code deleteAll} and a lookup by id before anything
  * asks for them — and a repository whose surface is larger than its use is a set of
- * signatures guessed rather than designed. Ticket 09's write path and ticket 12's
- * ascending-ID locking query arrive with theirs.
+ * signatures guessed rather than designed. Ticket 12's ascending-ID locking query arrives
+ * with its own.
  */
 interface AccountRepository extends Repository<Account, Long> {
 
@@ -23,6 +23,9 @@ interface AccountRepository extends Repository<Account, Long> {
 	 * two refetches of data that has not changed.
 	 */
 	List<Account> findAllByOrderByIdAsc();
+
+	/** Writes one Account, which is how an Account comes to exist. */
+	Account save(Account account);
 
 	/**
 	 * Writes several Accounts in one transaction, which is what the demo seeding of

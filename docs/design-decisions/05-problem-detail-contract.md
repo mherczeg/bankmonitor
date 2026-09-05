@@ -31,7 +31,13 @@ to agree with, which is two places for the vocabulary that exists to have one.
 **The URN is chosen from the response status, not from the exception class**,
 with one refinement: a body Jackson could not read (`urn:problem:malformed-request`)
 and a body that failed its constraints (`urn:problem:validation-failed`) are both
-`400` and are not the same news. Mapping by exception class looks more precise and
+`400` and are not the same news.
+
+*(**[Ticket 09](09-create-account-endpoint.md)** splits the first of those in
+two: a body that failed to read **at a member** — an unknown enum name, a decimal
+in a whole-number field — is a `validation-failed` naming that member, and only a
+body that does not parse stays `malformed-request`. The status-driven rule in
+`typeOf` is unchanged and is still the fallback.)* Mapping by exception class looks more precise and
 is not: `ConversionNotSupportedException` extends `TypeMismatchException` — a
 client-error type — but is a `500`, so the exception-driven version answered a
 server fault with a document blaming the caller's input. A client error this API

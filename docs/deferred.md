@@ -351,6 +351,28 @@ the whole of the enforcement.
 
 ---
 
+## Fetching a single Account, and the `Location` header that waits on it
+
+**Deferred.** There is no `GET /api/accounts/{id}`, and consequently the `201`
+from `POST /api/accounts` carries no `Location` header. The created Account's
+identifier is in the response body.
+
+**Why deferred:** no screen asks for one. Ticket 10's list endpoint is what the
+frontend reads, and nothing in the plan fetches an Account on its own. Adding
+the header without the resource is the part that would be wrong rather than
+merely incomplete — a `Location` pointing at a `404` breaks the client that
+trusts it and helps no one, whereas its absence sends every client to the body,
+which works.
+
+**What it would take:** the endpoint and the header together, in that order. The
+endpoint is a repository method and a controller mapping over the
+`AccountResponse` that already exists; the header is then one line in
+`AccountController`. Worth pairing with ticket 12's locking read so that the two
+ways of loading one Account are decided at the same time rather than the second
+being modelled on the first by accident.
+
+---
+
 ## API versioning
 
 **Deferred.** No `/v1` prefix; paths are `/api/transfers`, `/api/accounts`.

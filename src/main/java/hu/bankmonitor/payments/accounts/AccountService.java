@@ -1,5 +1,6 @@
 package hu.bankmonitor.payments.accounts;
 
+import hu.bankmonitor.payments.common.Money;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -8,17 +9,16 @@ import java.util.List;
 /**
  * What the accounts slice can be asked to do, and where the transaction around it starts.
  *
- * <p>Today it only forwards a query, and that is still where it belongs. Design decision
- * 30 forbids a controller holding a repository — asserted by
+ * <p>Design decision 30 forbids a controller holding a repository — asserted by
  * {@code ModuleBoundariesHoldTest} — because a controller that reaches persistence
- * directly has skipped the layer that owns the transaction. There is nothing here yet for
- * that layer to do beyond declaring it, and the moment ticket 09 creates an Account or
- * ticket 13 reserves against one there will be.
+ * directly has skipped the layer that owns the transaction. Today the work either side of
+ * that boundary is one call each way; the moment ticket 13 reserves against an Account
+ * there will be more.
  *
- * <p>The class is package-private and {@link #listAll()} is public, which looks backwards
- * and is not: proxy-based AOP silently ignores {@code @Transactional} on a non-public
- * method, so a demotion here would leave a method that reads as transactional and is not
- * (design decision 30).
+ * <p>The class is package-private and the methods are public, which looks backwards and is
+ * not: proxy-based AOP silently ignores {@code @Transactional} on a non-public method, so a
+ * demotion here would leave a method that reads as transactional and is not, with no error
+ * to read (design decision 30).
  */
 @Service
 class AccountService {
@@ -33,5 +33,14 @@ class AccountService {
 	@Transactional(readOnly = true)
 	public List<Account> listAll() {
 		return accounts.findAllByOrderByIdAsc();
+	}
+
+	/**
+	 * Opens an Account holding the given amount, in the currency that amount is
+	 * denominated in, and returns it with the identifier the database gave it.
+	 */
+	@Transactional
+	public Account open(Money openingBalance) {
+		return accounts.save(new Account(openingBalance));
 	}
 }

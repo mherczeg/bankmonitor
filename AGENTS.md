@@ -34,6 +34,18 @@ Configuration files are the exception: a setting cannot be renamed to explain it
 
 Settled architectural decisions live in `docs/design-decisions.md` — what was chosen, why, and what was rejected. Read it before proposing an approach; several options in there were considered and rejected for reasons that are not obvious from the code.
 
+**It is scaffolding, not a deliverable.** `docs/design-decisions.md`, `docs/deferred.md`
+and `.scratch/` exist to carry reasoning between tickets while the thing is being built,
+and are disposable once it is. What a maintainer inherits is `README.md`, the READMEs that
+sit next to the code they govern, `CONTEXT.md`, and Javadoc.
+
+So when the same fact belongs in both, **the durable document gets the full statement and
+the design record gets the reasoning and the rejected alternatives.** Deduplicating the
+other way — trimming a surviving document down to a pointer at `design-decisions.md` —
+reads as removing a duplicate and is actually removing the copy that was going to survive.
+The one-line-pointer rule under *Code style* is about comments in code, which sit beside
+the thing they describe; it does not apply to a document that has to stand on its own.
+
 ## Deferred decisions
 
 Anything consciously left out goes in `docs/deferred.md` with its reasoning. That file feeds the README's TODO section, which the task grades as heavily as the code.

@@ -36,10 +36,16 @@ whether the schema history table is there rather than asserting `spring.flyway.e
 which would have passed throughout — the property was never the thing that was wrong.
 
 **Where the convention lives:** `src/main/resources/db/migration/README.md`, next to the
-migrations it governs rather than in `docs/`. It carries the two rules an implementer has
-to follow at that moment — one migration per slice, no seed data — and points at design
-decision 29 for the naming and column-type traps rather than restating them. A first draft
-reproduced §29 in full and review caught it as a second copy to keep in sync.
+migrations it governs rather than in `docs/`. It carries one-migration-per-slice, the
+no-seed-data rule, the implicit naming strategy's flattening, and the native-H2-`ENUM`
+trap — the four things that will bite whoever writes the next `V`.
+
+Review flagged the naming and type material as a second copy of design decision 29 and it
+was trimmed to a pointer, which was the wrong direction and has been put back.
+`docs/design-decisions.md` is scaffolding for the build and goes away with it; this README
+ships with the code and is read while maintaining it. Deduplicating toward the disposable
+document leaves the surviving one pointing at nothing. Recorded in `AGENTS.md` so the next
+review resolves it the same way.
 
 **Seed data is enforced, not just documented.** `migrationsCarryNoSeedData` reads every
 `db/migration/**/*.sql` on the classpath and fails on an `insert into` or `merge into`

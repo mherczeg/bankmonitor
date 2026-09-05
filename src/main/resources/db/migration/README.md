@@ -24,8 +24,20 @@ A migration runs everywhere Flyway runs, the test suite included, so demo accoun
 would arrive in every test's database. Seed data belongs in a `@Profile("dev")`
 `CommandLineRunner`. `FlywayOwnsTheSchemaTest.migrationsCarryNoSeedData` enforces this.
 
-## Before you write the SQL
+## Writing the SQL
 
-Read design decision 29. Two things there decide what you type in these files: Hibernate's
-implicit naming strategy picks the column names you have to match, and
-`@Enumerated(EnumType.STRING)` does **not** produce the `varchar` you would expect.
+Hibernate's implicit naming strategy picks the names these files have to match:
+`fromAccountId` becomes `from_account_id`, and an embedded `Money` flattens into
+`minor_units` / `currency` with no prefix. It will not split a one-letter word off the one
+that follows it — `EntityWithoutAMigration` becomes `entity_withoutamigration`, not
+`entity_without_a_migration`.
+
+Column *types* are the sharper edge. `@Enumerated(EnumType.STRING)` on Hibernate 7 and H2
+maps to a **native H2 `enum (…)` column, not a `varchar`** — a migration writing
+`varchar(3)` looks obviously right, matches every tutorial written before Hibernate 6.2,
+and fails `validate` at startup. Pin the mapping with `@JdbcTypeCode(SqlTypes.VARCHAR)` on
+the component rather than writing an H2-specific type here; this schema still has to
+survive the move to Postgres. `RecordAsEmbeddableSpikeTest` holds the evidence.
+
+Design decision 29 has the reasoning behind all of this, and the alternatives that were
+rejected, for as long as that file is around.

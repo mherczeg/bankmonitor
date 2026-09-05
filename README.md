@@ -29,41 +29,55 @@ as a second process.
 ./mvnw test
 ```
 
-Expect **28 passing tests** and no Docker daemon involved. The suite runs on an in-memory
+Expect **76 passing tests** and no Docker daemon involved. The suite runs on an in-memory
 H2 database; Testcontainers was rejected precisely so this command works on a clean
 machine.
 
 ## Run the application
 
 ```bash
-./mvnw spring-boot:run
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
 It starts on **http://localhost:8080**.
 
+**The `dev` profile is what puts demo accounts in the database**, and it is opt-in on
+purpose. Without the flag the application starts empty — which is what the test suite gets,
+and what a deployment would get. Demo rows are seeded by a `@Profile("dev")` startup runner
+rather than by a migration, because a migration runs everywhere the schema does, and every
+test that reads the accounts table would then start from someone else's fixtures.
+
 | Endpoint | What it is |
 |---|---|
+| [`/api/accounts`](http://localhost:8080/api/accounts) | Every account, with its balance and its Available Balance |
 | [`/actuator/health`](http://localhost:8080/actuator/health) | Health check, including H2 connectivity |
 | [`/v3/api-docs`](http://localhost:8080/v3/api-docs) | The OpenAPI document the frontend's types are generated from |
 | [`/swagger-ui/index.html`](http://localhost:8080/swagger-ui/index.html) | Browsable API |
 
 Quick check from a second terminal:
 
-```bash
-curl -s localhost:8080/actuator/health
-# {"status":"UP","components":{"db":{"status":"UP","details":{"database":"H2",...
+```console
+$ curl -s localhost:8080/actuator/health
+{"status":"UP","components":{"db":{"status":"UP","details":{"database":"H2",...
+
+$ curl -s localhost:8080/api/accounts
+[{"id":1,"currency":"EUR","balanceMinorUnits":250000,
+  "reservedAmountMinorUnits":0,"availableBalanceMinorUnits":250000},
+ ...
+ {"id":5,"currency":"HUF","balanceMinorUnits":250000,
+  "reservedAmountMinorUnits":0,"availableBalanceMinorUnits":250000}]
 ```
 
-There is no business API yet — `/v3/api-docs` currently reports zero paths, which is
-correct for the current state of the build.
+Those two `250000`s are the same number and not the same amount — €2,500.00 and 250,000 Ft.
+That is the point of the `MinorUnits` suffix, and the reason the demo set includes HUF.
 
 ## What is built so far
 
-Tickets 01–08 of 44: the skeleton, schema management, the package structure the domain
-code will be written into, the security chain in front of it, the error contract every
-endpoint will answer with, the value type every amount in the system is expressed in and
-the single conversion between currencies, the first entity and the first table, and the
-two ecosystem bets that had to be settled first. **Both bets won.**
+Tickets 01–08 and 10 of 44: the skeleton, schema management, the package structure the
+domain code will be written into, the security chain in front of it, the error contract
+every endpoint will answer with, the value type every amount in the system is expressed in
+and the single conversion between currencies, the first entity and the first table, the
+first endpoint, and the two ecosystem bets that had to be settled first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type
@@ -108,6 +122,21 @@ fixed when the account is opened. A second constraint keeps the Reserved Amount 
 zero and the balance: the overdraft refusal itself belongs in the service, under the lock,
 where it can reach the caller as a `422`, and this is what makes a route around it a
 failed write rather than an overdrawn account.
+
+**`GET /api/accounts` is the first business endpoint**, and it reports three figures from
+two stored ones: the Available Balance is subtracted on the way out, never persisted, so no
+write can leave it disagreeing with the balance and the Reserved Amount it comes from. It is
+sent rather than left for the client to compute because it is the figure the overdraft check
+tests against — a client that subtracted for itself would be a second implementation of the
+rule, and the one that drifts. The listing is ordered, which is a contract rather than a
+detail of the query: an unordered one would let the accounts screen reshuffle itself between
+two refetches of unchanged data. It is also the first shape in `/v3/api-docs`, so from here
+on a renamed field is a TypeScript compile error in the frontend rather than an
+`undefined` at runtime.
+
+Every seeded account starts with nothing reserved, because reserving is what a Transfer
+does and transfers do not exist yet — so on a fresh `dev` start, Available Balance equals
+balance everywhere. That is the derivation working, not the demo data being flat.
 
 **Virtual threads are on** (`spring.threads.virtual.enabled=true`), and they are
 load-bearing rather than a nicety. The stand-in Exchange Rate provider is a real HTTP

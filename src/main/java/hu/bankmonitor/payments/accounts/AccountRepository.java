@@ -1,0 +1,33 @@
+package hu.bankmonitor.payments.accounts;
+
+import org.springframework.data.repository.Repository;
+
+import java.util.List;
+
+/**
+ * Persistence for {@link Account}, package-private so that reaching it from another slice
+ * does not compile (design decision 30).
+ *
+ * <p>It extends the bare {@link Repository} marker rather than {@code CrudRepository},
+ * which declares nothing, so every method here has a call site today. {@code CrudRepository}
+ * would hand the slice {@code delete}, {@code deleteAll} and a lookup by id before anything
+ * asks for them — and a repository whose surface is larger than its use is a set of
+ * signatures guessed rather than designed. Ticket 09's write path and ticket 12's
+ * ascending-ID locking query arrive with theirs.
+ */
+interface AccountRepository extends Repository<Account, Long> {
+
+	/**
+	 * Every Account, oldest first. The order is part of the listing's contract rather than
+	 * a detail of the query: without it the accounts screen may reshuffle itself between
+	 * two refetches of data that has not changed.
+	 */
+	List<Account> findAllByOrderByIdAsc();
+
+	/**
+	 * Writes several Accounts in one transaction, which is what the demo seeding of
+	 * {@link DemoAccountSeeder} needs and all it needs — a half-seeded application is a
+	 * worse starting point than an empty one.
+	 */
+	List<Account> saveAll(Iterable<Account> accounts);
+}

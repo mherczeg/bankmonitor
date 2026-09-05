@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.test.context.TestPropertySource;
 
@@ -30,8 +31,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>If this test ever fails, the finding and its consequence belong in
  * {@code docs/deferred.md} rather than being routed around quietly.
+ *
+ * <p>Repository scanning is off for the reason
+ * {@code MoneyMapsToTwoColumnsTest} spells out: {@code @EntityScan} does not narrow it, and
+ * nothing here asks for a repository.
  */
-@DataJpaTest
+@DataJpaTest(excludeAutoConfiguration = DataJpaRepositoriesAutoConfiguration.class)
 @EntityScan(basePackageClasses = SpikeEmbeddableHost.class)
 @TestPropertySource(properties = {
 		// The spike owns its schema; from ticket 02 Flyway owns the real one and there

@@ -29,6 +29,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | [06 — money and currency](06-money-and-currency.md) | `Money`'s four-method surface; two corrections to §29's mapping assumptions |
 | [07 — the conversion function](07-conversion-function.md) | round-to-zero as a sealed outcome, not an empty `Optional`; why it lives in `fx`; the rate guard the shape needed |
 | [08 — the Account entity](08-account-entity.md) | the identifier no section had chosen; why a `record` entity boots and then fails; two invariants in the table |
+| [10 — listing Accounts, and seed data](10-list-accounts-and-seed.md) | the service §30's tree omits and its own rule requires; two slice tests that assumed an empty scan root |
 
 ## The initial decisions, section by section
 
@@ -46,7 +47,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | §10 | [Internal endpoints sit behind a shared secret](00-initial-decisions.md#10-internal-endpoints-sit-behind-a-shared-secret) | — |
 | §11 | [Check services are pushed to, via the outbox](00-initial-decisions.md#11-check-services-are-pushed-to-via-the-outbox) | — |
 | §12 | [Hand-rolled transactional outbox](00-initial-decisions.md#12-hand-rolled-transactional-outbox) | — |
-| §13 | [Balances: two fields on `Account`](00-initial-decisions.md#13-balances-two-fields-on-account) | [08](08-account-entity.md) |
+| §13 | [Balances: two fields on `Account`](00-initial-decisions.md#13-balances-two-fields-on-account) | [08](08-account-entity.md), [10](10-list-accounts-and-seed.md) |
 | §14 | [Unanswered checks expire](00-initial-decisions.md#14-unanswered-checks-expire) | — |
 | §15 | [The FX rate is locked at request time](00-initial-decisions.md#15-the-fx-rate-is-locked-at-request-time) | — |
 | §16 | [Money is a `long` count of minor units](00-initial-decisions.md#16-money-is-a-long-count-of-minor-units) | [01](01-project-skeleton.md), [06](06-money-and-currency.md), [07](07-conversion-function.md) |
@@ -58,13 +59,13 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | §22 | [TanStack Form + zod, and no global state library](00-initial-decisions.md#22-tanstack-form--zod-and-no-global-state-library) | — |
 | §23 | [Bootstrap 5, CSS only, plus CSS Modules](00-initial-decisions.md#23-bootstrap-5-css-only-plus-css-modules) | — |
 | §24 | [Frontend testing: extract logic, unit test it, Playwright end-to-mock](00-initial-decisions.md#24-frontend-testing-extract-logic-unit-test-it-playwright-end-to-mock) | — |
-| §25 | [Backend tests run on H2](00-initial-decisions.md#25-backend-tests-run-on-h2) | [01](01-project-skeleton.md) |
+| §25 | [Backend tests run on H2](00-initial-decisions.md#25-backend-tests-run-on-h2) | [01](01-project-skeleton.md), [10](10-list-accounts-and-seed.md) |
 | §26 | [Frontend API types are generated from OpenAPI](00-initial-decisions.md#26-frontend-api-types-are-generated-from-openapi) | [01](01-project-skeleton.md) |
 | §27 | [The flaky FX provider: timeouts, retry, then fail to the caller](00-initial-decisions.md#27-the-flaky-fx-provider-timeouts-retry-then-fail-to-the-caller) | — |
 | §28 | [The mock FX provider is a real HTTP endpoint inside the app](00-initial-decisions.md#28-the-mock-fx-provider-is-a-real-http-endpoint-inside-the-app) | — |
-| §29 | [Maven, Flyway, and `ddl-auto=validate`](00-initial-decisions.md#29-maven-flyway-and-ddl-autovalidate) | [01](01-project-skeleton.md), [02](02-flyway-wiring.md), [06](06-money-and-currency.md), [08](08-account-entity.md) |
-| §30 | [Package-by-feature](00-initial-decisions.md#30-package-by-feature) | [03](03-package-skeleton-archunit.md), [07](07-conversion-function.md) |
-| §31 | [Residual API decisions](00-initial-decisions.md#31-residual-api-decisions) | — |
+| §29 | [Maven, Flyway, and `ddl-auto=validate`](00-initial-decisions.md#29-maven-flyway-and-ddl-autovalidate) | [01](01-project-skeleton.md), [02](02-flyway-wiring.md), [06](06-money-and-currency.md), [08](08-account-entity.md), [10](10-list-accounts-and-seed.md) |
+| §30 | [Package-by-feature](00-initial-decisions.md#30-package-by-feature) | [03](03-package-skeleton-archunit.md), [07](07-conversion-function.md), [10](10-list-accounts-and-seed.md) |
+| §31 | [Residual API decisions](00-initial-decisions.md#31-residual-api-decisions) | [10](10-list-accounts-and-seed.md) |
 
 Sections with no ticket against them have not been revisited since they were
 written — either their work has not started, or it raised nothing the design did

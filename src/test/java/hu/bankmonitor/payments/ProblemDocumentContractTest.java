@@ -28,8 +28,16 @@ import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
  * <p>{@code @WebMvcTest} rather than a booted application: nothing here touches
  * persistence, and the contract belongs to the dispatcher and the exception handler in
  * front of it.
+ *
+ * <p>It names its controller, which looks redundant beside the {@code @Import} and is not.
+ * A bare {@code @WebMvcTest} component-scans every controller in the application, and from
+ * ticket 10 that means a real one, whose service and repository the web slice deliberately
+ * does not provide — the context then fails to start on a missing {@code AccountService}.
+ * Naming {@link ProblemProbeController} narrows the scan to a class that lives outside the
+ * application's packages, so it matches nothing; the {@code @Import} is still what registers
+ * the probe.
  */
-@WebMvcTest
+@WebMvcTest(ProblemProbeController.class)
 @Import({SecurityConfiguration.class, ProblemProbeController.class})
 class ProblemDocumentContractTest {
 

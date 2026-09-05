@@ -31,7 +31,13 @@ this application never uses.
 
 A migration runs everywhere Flyway runs, the test suite included, so demo accounts in one
 would arrive in every test's database. Seed data belongs in a `@Profile("dev")`
-`CommandLineRunner`. `FlywayOwnsTheSchemaTest.migrationsCarryNoSeedData` enforces this.
+`CommandLineRunner` — `DemoAccountSeeder` is the first one.
+
+`FlywayOwnsTheSchemaTest` holds both halves: `migrationsCarryNoSeedData` reads the `.sql`
+files, and `noStartupRunnerSeedsTheDatabaseOutsideTheDevProfile` asserts that a context
+with no profile active has no `CommandLineRunner` or `ApplicationRunner` bean at all. The
+second is by type rather than by name, so the next slice tempted to seed something is held
+to the same profile guard.
 
 ## Writing the SQL
 

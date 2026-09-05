@@ -13,9 +13,9 @@ generates its types from (ticket 32).
 
 **Blocked by:** 08
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Listing returns every Account with balance and Available Balance
-- [ ] Available Balance is computed from the balance and the Reserved Amount
-- [ ] Demo Accounts in at least two Currencies appear under the dev profile
-- [ ] No seed data runs under the test profile
+- [x] Listing returns every Account with balance and Available Balance
+- [x] Available Balance is computed from the balance and the Reserved Amount
+- [x] Demo Accounts in at least two Currencies appear under the dev profile
+- [x] No seed data runs under the test profile

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.test.context.TestPropertySource;
 
@@ -30,8 +31,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * accounts table will. Checking the mapping <em>against hand-written SQL</em> is what makes
  * a startup failure the assertion, and it rehearses the position ticket 08 writes its
  * migration from.
+ *
+ * <p><b>Repository scanning is off</b>, because {@code @EntityScan} does not narrow it.
+ * Moving the managed types to a fixture package leaves {@code @DataJpaTest} scanning
+ * repositories from the application's root, so from ticket 10 — the first slice with a real
+ * one — this context tried to build {@code AccountRepository} against a metamodel that no
+ * longer knows {@code Account}, and failed to start with "Not a managed type". Nothing here
+ * asks for a repository; the assertions go through {@link TestEntityManager} and SQL.
  */
-@DataJpaTest
+@DataJpaTest(excludeAutoConfiguration = DataJpaRepositoriesAutoConfiguration.class)
 @EntityScan(basePackageClasses = MoneyEmbeddingHost.class)
 @TestPropertySource(properties = {
 		// The host entity is test-only, so its table ships beside this test rather than

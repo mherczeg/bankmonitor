@@ -318,6 +318,9 @@ position) absorbing cross-currency differences so each currency's books balance
 independently. Deferred deliberately — see [deferred.md](../deferred.md).
 
 > **Built in [ticket 08](08-account-entity.md)**.
+> **[Ticket 10](10-list-accounts-and-seed.md)** puts the derived Available Balance
+> on the wire, and records why the endpoint that reports it cannot be tested with
+> a mocked service.
 
 ---
 
@@ -759,6 +762,9 @@ Postgres — see [deferred.md](../deferred.md).
 > **[Ticket 01](01-project-skeleton.md) found that Boot 4 moved the furniture**
 > under all of this, and that test sources component-scan into every
 > `@SpringBootTest` in the suite.
+> **[Ticket 10](10-list-accounts-and-seed.md)** found the matching hazard in the
+> narrow slices: two of them had narrowed one kind of scanning and not the other,
+> and only broke once the application had a controller and a repository to find.
 
 ---
 
@@ -917,6 +923,8 @@ suite too.
 > records what they said and what replaced them.
 > **[Ticket 08](08-account-entity.md)** wrote the first migration against all of
 > it, and settled the question ticket 06 left open about `@AttributeOverride`.
+> **[Ticket 10](10-list-accounts-and-seed.md)** built the `@Profile("dev")` runner
+> the last paragraph asks for, and both halves of the assertion that holds it there.
 
 ---
 
@@ -968,6 +976,9 @@ package-private; the **`@Transactional` method** stays public.
 > rules needed violation fixtures to be worth anything.
 > **[Ticket 07](07-conversion-function.md)** adds to the `fx/` line above: the
 > package exports a second public type beside the port, though not a second port.
+> **[Ticket 10](10-list-accounts-and-seed.md)** adds an `AccountService` to the
+> `accounts/` line, which the tree omits and this section's own ArchUnit rule
+> requires.
 
 ---
 
@@ -981,4 +992,8 @@ package-private; the **`@Transactional` method** stays public.
   denomination would make every historical balance ambiguous.
 - **Observability:** the Actuator health endpoint, plus §12's structured log
   line on publish. Nothing else.
+
+> **[Ticket 10](10-list-accounts-and-seed.md)** settles the listing's wire shape
+> against the immutable currency above: one `currency` field for all three
+> figures, and a bare array rather than an envelope.
 

@@ -8,15 +8,30 @@ Each entry: what was decided, why, and what was rejected.
 [ADR-0001](adr/0001-asynchronous-transfer-lifecycle.md) records the one decision
 that shapes all the others.
 
-> **Verify in the first hour of building.** Two of these decisions bet that the
-> ecosystem has caught up to Spring Boot 4. Both are cheap to check now and
-> expensive to discover late:
+> **Verified in the first hour of building — both bets won.** Two of these
+> decisions bet that the ecosystem has caught up to Spring Boot 4. Settled in
+> ticket 01 on Spring Boot 4.1.1 / Hibernate 7 / Java 21, by tests in the repo
+> rather than by reading changelogs:
 >
-> 1. **Hibernate maps a Java `record` as `@Embeddable`** (§16) — supported since
->    Hibernate 6.2, and Boot 4 ships Hibernate 7. If not, every entity's shape
->    changes.
-> 2. **`springdoc-openapi` supports Spring Boot 4** (§26) — if not, the
->    generated-types safety net for the frontend does not exist.
+> 1. **Hibernate maps a Java `record` as `@Embeddable`** (§16) — **confirmed.**
+>    `RecordAsEmbeddableSpikeTest` round-trips a `record` through H2, so
+>    Hibernate is instantiating it through its canonical constructor. It also
+>    pins down two things the domain will rely on: `@Enumerated(STRING)` on a
+>    record component does propagate to the mapped field, and the implicit naming
+>    strategy flattens `minorUnits` to a `minor_units` column — which is the
+>    column name §29's first migration has to use. It also turned up a genuine
+>    trap: `@Enumerated(STRING)` emits a **native H2 `ENUM` column, not a
+>    `varchar`**, so the obvious `varchar(3)` migration would fail `validate` at
+>    startup. Recorded with its remedy in §29.
+> 2. **`springdoc-openapi` supports Spring Boot 4** (§26) — **confirmed**, on the
+>    **3.x line**. This is the sharp edge: springdoc 2.x targets Boot 3 and does
+>    not work here; 3.1.0 is itself built against `spring-boot-starter-parent`
+>    4.1.0. `OpenApiDocumentSpikeTest` asserts the document contains a known
+>    controller's path and its record response schema, not merely that
+>    `/v3/api-docs` returns `200` — an empty but valid skeleton would have passed
+>    the weaker check while leaving §26's generated types just as impossible.
+>
+> Neither bet needed a [deferred.md](deferred.md) entry as a result.
 
 ---
 
@@ -697,6 +712,37 @@ the design decision:
   lifecycle. *Konkurencia és adatintegritás* is a named graded requirement, so
   these are the tests that count.
 
+**Boot 4 moved the furniture** (found while writing ticket 01's tests, recorded
+here because every tutorial and every model's training data predates it):
+
+- **`TestRestTemplate` no longer exists.** The replacement is Spring Framework
+  7's `RestTestClient`, used as
+  `RestTestClient.bindToServer().baseUrl("http://localhost:" + port).build()`
+  with a fluent `.expectStatus()` / `.jsonPath()` API. Reach for it in any
+  `@SpringBootTest(webEnvironment = RANDOM_PORT)`.
+- **The slice annotations changed packages**, and the compiler error for these
+  is an unhelpful "cannot find symbol":
+  `@DataJpaTest` → `org.springframework.boot.data.jpa.test.autoconfigure`,
+  `TestEntityManager` → `org.springframework.boot.jpa.test.autoconfigure`,
+  `@EntityScan` → `org.springframework.boot.persistence.autoconfigure`.
+- **Starters were split by slice.** It is `spring-boot-starter-webmvc`, not
+  `spring-boot-starter-web`, and test support arrives as one `*-test` starter
+  per slice (`spring-boot-starter-webmvc-test`, `-data-jpa-test`, …) rather than
+  a single `spring-boot-starter-test`.
+- **`TestEntityManager` does not resolve as a constructor parameter** —
+  `ParameterResolutionException` at runtime, not a compile error. Use
+  `@Autowired` field injection.
+
+One trap that is not Boot 4's fault but shows up the moment tests need their own
+`@Entity` or `@RestController`: **test sources share the runtime classpath with
+main sources**, so anything annotated under `hu.bankmonitor.payments` in
+`src/test` is component-scanned into *every* `@SpringBootTest` in the suite.
+Ticket 01 keeps its throwaway entity and probe controller in
+`hu.bankmonitor.testsupport` — deliberately outside the scan root — and
+`@Import`s or `@EntityScan`s them explicitly. This gets sharper from ticket 02:
+once Flyway owns the schema and `ddl-auto=validate` is on, one leaked test entity
+with no migration behind it fails startup for every database test there is.
+
 **Three traps:**
 
 - **Context caching.** `@SpringBootTest` boots the application context once and
@@ -867,6 +913,33 @@ silently maps `fromAccountId` to `from_account_id`, and a `Money` embeddable to
 commit, each mismatch fails at startup naming the exact column; discovered at
 the end, they arrive all at once.
 
+**Column *types* are the sharper half of that, and ticket 01's spike found one
+that would otherwise have cost an afternoon.** `@Enumerated(EnumType.STRING)` on
+Hibernate 7 / H2 does **not** produce a `varchar`. It emits a **native H2 `ENUM`**:
+
+```sql
+create table spike_embeddable_host (
+    id bigint generated by default as identity,
+    minor_units bigint,
+    currency enum ('EUR','HUF','USD'),   /* not varchar(3) */
+    primary key (id)
+)
+```
+
+A migration writing `currency varchar(3)` — which looks obviously right, and
+matches every tutorial written before Hibernate 6.2 — therefore fails `validate`
+at startup. There are two ways out, and the choice belongs in the entity rather
+than in the migration: write `enum (...)` in the migration and accept an
+H2-specific column type, or pin the mapping with
+`@JdbcTypeCode(SqlTypes.VARCHAR)` on the component and write `varchar`.
+
+**Prefer the second.** The TODO list already marks verifying this schema against
+Postgres as a production prerequisite, and a native H2 enum is exactly the kind
+of thing that will not survive that move.
+`RecordAsEmbeddableSpikeTest.mapsEnumComponentToNativeEnumColumn` asserts the
+current behaviour, so changing it later is a visible decision rather than a
+silent drift.
+
 **Seed data is not schema.** Demo accounts belong in a `@Profile("dev")`
 `CommandLineRunner`, never in a migration — a Flyway seed runs in the test
 suite too.
@@ -876,7 +949,7 @@ suite too.
 ## 30. Package-by-feature
 
 ```
-com.example.payments
+hu.bankmonitor.payments
 ├── accounts/      Account, AccountController · repository package-private
 ├── transfers/     Transfer, TransferController, TransferService
 │   └── checks/    CheckLedger, CheckPolicy, VerdictController (/internal)

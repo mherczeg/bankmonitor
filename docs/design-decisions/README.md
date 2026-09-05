@@ -28,12 +28,13 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | [05 — problem detail contract](05-problem-detail-contract.md) | why `spring.mvc.problemdetails.enabled` is absent; URN chosen from status, not exception |
 | [06 — money and currency](06-money-and-currency.md) | `Money`'s four-method surface; two corrections to §29's mapping assumptions |
 | [07 — the conversion function](07-conversion-function.md) | round-to-zero as a sealed outcome, not an empty `Optional`; why it lives in `fx`; the rate guard the shape needed |
+| [08 — the Account entity](08-account-entity.md) | the identifier no section had chosen; why a `record` entity boots and then fails; two invariants in the table |
 
 ## The initial decisions, section by section
 
 | § | Decision | Tickets that touched it |
 |---|---|---|
-| §1 | [`Account` is the atomic entity — no `User`](00-initial-decisions.md#1-account-is-the-atomic-entity--no-user) | — |
+| §1 | [`Account` is the atomic entity — no `User`](00-initial-decisions.md#1-account-is-the-atomic-entity--no-user) | [08](08-account-entity.md) |
 | §2 | [Authentication is stubbed, not built](00-initial-decisions.md#2-authentication-is-stubbed-not-built) | [04](04-security-chain-cors.md) |
 | §3 | [Idempotency lives in the service layer, behind a seam](00-initial-decisions.md#3-idempotency-lives-in-the-service-layer-behind-a-seam) | — |
 | §4 | [Request handling is three phases](00-initial-decisions.md#4-request-handling-is-three-phases) | — |
@@ -45,7 +46,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | §10 | [Internal endpoints sit behind a shared secret](00-initial-decisions.md#10-internal-endpoints-sit-behind-a-shared-secret) | — |
 | §11 | [Check services are pushed to, via the outbox](00-initial-decisions.md#11-check-services-are-pushed-to-via-the-outbox) | — |
 | §12 | [Hand-rolled transactional outbox](00-initial-decisions.md#12-hand-rolled-transactional-outbox) | — |
-| §13 | [Balances: two fields on `Account`](00-initial-decisions.md#13-balances-two-fields-on-account) | — |
+| §13 | [Balances: two fields on `Account`](00-initial-decisions.md#13-balances-two-fields-on-account) | [08](08-account-entity.md) |
 | §14 | [Unanswered checks expire](00-initial-decisions.md#14-unanswered-checks-expire) | — |
 | §15 | [The FX rate is locked at request time](00-initial-decisions.md#15-the-fx-rate-is-locked-at-request-time) | — |
 | §16 | [Money is a `long` count of minor units](00-initial-decisions.md#16-money-is-a-long-count-of-minor-units) | [01](01-project-skeleton.md), [06](06-money-and-currency.md), [07](07-conversion-function.md) |
@@ -61,7 +62,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | §26 | [Frontend API types are generated from OpenAPI](00-initial-decisions.md#26-frontend-api-types-are-generated-from-openapi) | [01](01-project-skeleton.md) |
 | §27 | [The flaky FX provider: timeouts, retry, then fail to the caller](00-initial-decisions.md#27-the-flaky-fx-provider-timeouts-retry-then-fail-to-the-caller) | — |
 | §28 | [The mock FX provider is a real HTTP endpoint inside the app](00-initial-decisions.md#28-the-mock-fx-provider-is-a-real-http-endpoint-inside-the-app) | — |
-| §29 | [Maven, Flyway, and `ddl-auto=validate`](00-initial-decisions.md#29-maven-flyway-and-ddl-autovalidate) | [01](01-project-skeleton.md), [02](02-flyway-wiring.md), [06](06-money-and-currency.md) |
+| §29 | [Maven, Flyway, and `ddl-auto=validate`](00-initial-decisions.md#29-maven-flyway-and-ddl-autovalidate) | [01](01-project-skeleton.md), [02](02-flyway-wiring.md), [06](06-money-and-currency.md), [08](08-account-entity.md) |
 | §30 | [Package-by-feature](00-initial-decisions.md#30-package-by-feature) | [03](03-package-skeleton-archunit.md), [07](07-conversion-function.md) |
 | §31 | [Residual API decisions](00-initial-decisions.md#31-residual-api-decisions) | — |
 

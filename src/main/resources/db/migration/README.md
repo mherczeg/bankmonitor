@@ -15,8 +15,17 @@ it.
 Numbers are global and never reused. Applied migrations are immutable: to change
 something a released migration created, add the next `V`.
 
-Until the first `V1__` file lands, startup logs `No migrations found. Are your locations
-set up correctly?`. They are; the warning goes away with the first migration.
+## Invariants belong here too
+
+`V1__accounts.sql` carries named `check` constraints, and they are not a substitute for
+the domain check above them — an overdraft has to be refused in the service, under the
+lock, to reach the caller as a `422` rather than a constraint violation. What the
+constraint adds is that a path *around* that check fails the write. Name them, so a
+violation says which rule was broken.
+
+Hand-written constraints are fine under `validate`. The trouble design decision 29 records
+is with Hibernate's *schema export* emitting one under `create-drop`, which is a setting
+this application never uses.
 
 ## Seed data does not go here
 

@@ -78,8 +78,9 @@ security context.
 **Why deferred:** no requirement queries, filters, or authorises by owner. An
 owner entity with no behaviour is schema and test setup for nothing.
 
-**What it would take:** an `owner` field on the account record — additive and
-non-breaking, since the response is a Java `record`.
+**What it would take:** an `owner` field on `Account` and a column beside it —
+additive and non-breaking, since nothing reads the entity positionally and the
+response is assembled separately.
 
 ---
 

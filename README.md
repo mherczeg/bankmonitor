@@ -59,16 +59,19 @@ correct for the current state of the build.
 
 ## What is built so far
 
-Tickets 01–06 of 44: the skeleton, schema management, the package structure the domain
+Tickets 01–08 of 44: the skeleton, schema management, the package structure the domain
 code will be written into, the security chain in front of it, the error contract every
-endpoint will answer with, the value type every amount in the system is expressed in, and
-the two ecosystem bets that had to be settled first. **Both bets won.**
+endpoint will answer with, the value type every amount in the system is expressed in and
+the single conversion between currencies, the first entity and the first table, and the
+two ecosystem bets that had to be settled first. **Both bets won.**
 
-1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` and `Account` are both
-   records by design; if Hibernate could not instantiate one through its canonical
-   constructor, every entity's shape would have changed. The spike that settled it has
-   since been overtaken by the real thing — `Money` is now mapped against a hand-written
-   migration, on the same `validate` setting the application runs on.
+1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
+   Hibernate could not instantiate one through its canonical constructor, every value type
+   in the system would have changed shape. The spike that settled it has since been
+   overtaken by the real thing — `Money` is now mapped against a hand-written migration,
+   on the same `validate` setting the application runs on. The support stops at
+   `@Embeddable`: an `@Entity` record compiles, boots and passes `validate`, then throws on
+   the first write because its components are `final`, which is why `Account` is a class.
 2. **`springdoc-openapi` works on Spring Boot 4** — on the 3.x line only; 2.x targets
    Boot 3. The generated frontend types depend on this, and so does the browser test
    strategy that rests on them.
@@ -89,12 +92,22 @@ per-currency decimal places (2 for EUR and USD, 0 for HUF) are read at the edges
 parse and display an amount, and nowhere else: **the core never divides by a hundred.**
 
 **Flyway owns the schema** and Hibernate runs on `ddl-auto=validate`, from before the
-first table exists rather than baselined at the end. There are no migrations yet — each
-slice ships the one for the table it introduces, a convention written down in
+first table existed rather than baselined at the end. Each slice ships the migration for
+the table it introduces — `V1__accounts.sql` is the first — a convention written down in
 [`src/main/resources/db/migration/README.md`](src/main/resources/db/migration/README.md).
-What is already load-bearing is that an entity with no table behind it fails startup
-naming the table Hibernate went looking for, which `FlywayOwnsTheSchemaTest` proves by
-booting the application with exactly that mistake in it.
+An entity with no table behind it fails startup naming the table Hibernate went looking
+for, which `FlywayOwnsTheSchemaTest` proves by booting the application with exactly that
+mistake in it.
+
+**An Account holds two figures, not one:** its balance, and the Reserved Amount committed
+to transfers that have not finished. Their difference is the Available Balance, which is
+what an overdraft check tests against — so an account's own row answers "how much of this
+is still spendable" without reading a single transfer. Both are `Money`, so the table
+carries four columns and a check constraint that the two agree on their currency, which is
+fixed when the account is opened. A second constraint keeps the Reserved Amount between
+zero and the balance: the overdraft refusal itself belongs in the service, under the lock,
+where it can reach the caller as a `422`, and this is what makes a route around it a
+failed write rather than an overdrawn account.
 
 **Virtual threads are on** (`spring.threads.virtual.enabled=true`), and they are
 load-bearing rather than a nicety. The stand-in Exchange Rate provider is a real HTTP

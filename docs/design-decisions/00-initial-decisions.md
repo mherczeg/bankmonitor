@@ -35,8 +35,11 @@ transfers move money between account IDs, and all three screens are unscoped.
 The spec's "felhasználói számla" reads as an adjective, not a modelling
 instruction.
 
-`Account` is a Java `record`, so adding an `owner` field later is additive and
-non-breaking. `User` is named in `CONTEXT.md` as deliberately unmodelled.
+`Account` is a mutable class with a protected no-arg constructor, which is the
+only shape JPA can map — a `record` compiles, boots and passes `validate`, then
+throws on the first write. Adding an `owner` field later is additive and
+non-breaking either way. `User` is named in `CONTEXT.md` as deliberately
+unmodelled.
 
 **Rejected — an empty `interface AccountOwner {}` stub.** Works in TypeScript,
 where structural typing makes an empty interface a maximally-wide "shape TBD"
@@ -48,6 +51,8 @@ fails to start; and the field leaks into the API response as a permanent
 
 **Rejected — an `OwnershipPolicy` seam.** A stub that names a rule asserts the
 rule exists. It would read as ownership implemented permissively, not deferred.
+
+> The `record` sentence above is a correction from **[ticket 08](08-account-entity.md)**, which measured it.
 
 ---
 
@@ -311,6 +316,8 @@ What banks run *underneath* is double-entry: balances are a materialized
 projection over a posting log, with internal accounts (suspense, clearing, FX
 position) absorbing cross-currency differences so each currency's books balance
 independently. Deferred deliberately — see [deferred.md](../deferred.md).
+
+> **Built in [ticket 08](08-account-entity.md)**.
 
 ---
 
@@ -908,6 +915,8 @@ suite too.
 > two things this section assumed about it. Both were false sentences and have
 > been struck from the text above rather than left to mislead; ticket 06's file
 > records what they said and what replaced them.
+> **[Ticket 08](08-account-entity.md)** wrote the first migration against all of
+> it, and settled the question ticket 06 left open about `@AttributeOverride`.
 
 ---
 

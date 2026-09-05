@@ -442,6 +442,39 @@ rounding remainder vanishes. That is what the double-entry deferral costs — se
 `@Embeddable`. It has been supported since Hibernate 6.2 and Boot 4 ships
 Hibernate 7, but a wrong assumption here re-shapes every entity.
 
+### As built (ticket 06)
+
+`record Money(long minorUnits, Currency currency)` and `enum Currency` in
+`common`, with **four methods and no more**: `zero`, `plus`, `minus`,
+`isLessThan`. Each of the three that takes an operand rejects a differing
+currency with an `IllegalArgumentException` naming both.
+
+**The surface is deliberately smaller than the type could support.** A value
+type invites a full complement — `isNegative`, `isPositive`, `isZero`,
+`negate`, `times` — and every one of them was rejected on the same ground:
+nothing calls it. The tickets that need more (08's balances, 13's overdraft
+check, 26's conversion) can add exactly what they use, against a real call
+site, rather than this ticket guessing at the shape from one ticket away.
+
+**Rejected — `implements Comparable<Money>`.** It reads as the obvious way to
+express ordering, and it cannot be honoured: `compareTo` has to be total, so a
+`Money` comparison across currencies would either have to invent an order
+between euros and forints or throw from a method whose contract says it does
+not. Throwing also silently breaks anything that sorts or puts `Money` in a
+`TreeMap`. A named `isLessThan` that throws is a method whose documentation is
+free to say so.
+
+**Negative amounts are representable, on purpose.** A difference between two
+amounts is money, and refusing to hold one here would push the subtraction out
+to bare `long`s where nothing checks the currency. "A balance may not go
+negative" is the *Account's* invariant, and §13's reservation is where it is
+enforced.
+
+**Overflow throws rather than wraps** — `Math.addExact` / `Math.subtractExact`.
+Java's `+` wrapping silently is the one way a count of Minor Units can
+represent a quantity that is not the answer, which is the property the whole
+decision was chosen for.
+
 ---
 
 ## 17. One event stream, thin events, no catch-up
@@ -1029,10 +1062,22 @@ made the original decision worth keeping — `validate` on from the very first
 commit — is unaffected, and is the part that actually catches mismatches.
 
 **From day one, not baselined at the end.** Hibernate's implicit naming strategy
-silently maps `fromAccountId` to `from_account_id`, and a `Money` embeddable to
-`amount_minor_units` / `amount_currency`. With `validate` on from the first
-commit, each mismatch fails at startup naming the exact column; discovered at
-the end, they arrive all at once.
+silently maps `fromAccountId` to `from_account_id`. With `validate` on from the
+first commit, each mismatch fails at startup naming the exact column; discovered
+at the end, they arrive all at once.
+
+**Corrected by ticket 06.** This decision used to claim the same strategy
+prefixes an embeddable's columns with the field name — a `Money` field `amount`
+becoming `amount_minor_units` / `amount_currency`. It does not. The component's
+own names are used unchanged: `minor_units` and `currency`, asserted by
+`MoneyMapsToTwoColumnsTest`. An `Account` holding both a balance and a Reserved
+Amount therefore needs `@AttributeOverride` or the two embeddables collide on
+the same two columns, which is ticket 08's first job. Note while writing those
+overrides that `@AttributeOverride` replaces the component's `@Column`
+wholesale — which is why `Money` deliberately carries **no** `@Column(length = 3)`,
+a pin that would silently stop applying at the first override. `@JdbcTypeCode` is
+a separate annotation and is expected to survive an override; nothing here has
+tested that yet, so ticket 08 should confirm it rather than assume it.
 
 **Column *types* are the sharper half of that, and ticket 01's spike found one
 that would otherwise have cost an afternoon.** `@Enumerated(EnumType.STRING)` on
@@ -1047,9 +1092,7 @@ create table spike_embeddable_host (
 )
 ```
 
-A migration writing `currency varchar(3)` — which looks obviously right, and
-matches every tutorial written before Hibernate 6.2 — therefore fails `validate`
-at startup. There are two ways out, and the choice belongs in the entity rather
+There are two ways to answer that, and the choice belongs in the entity rather
 than in the migration: write `enum (...)` in the migration and accept an
 H2-specific column type, or pin the mapping with
 `@JdbcTypeCode(SqlTypes.VARCHAR)` on the component and write `varchar`.
@@ -1060,6 +1103,52 @@ of thing that will not survive that move.
 `RecordAsEmbeddableSpikeTest.mapsEnumComponentToNativeEnumColumn` asserts the
 current behaviour, so changing it later is a visible decision rather than a
 silent drift.
+
+**Ticket 06 measured the whole table, and it is not what this decision assumed.**
+The spike settled what Hibernate *emits* under `create-drop` and this decision
+inferred the rest. Removing each annotation from `Money` in turn and running
+`MoneyMapsToTwoColumnsTest` — table from a migration declaring
+`currency varchar(3)`, Hibernate on `validate` — gives:
+
+| on the component | `validate` | stored |
+|---|---|---|
+| nothing | **fails**: expects `tinyint`, found `character varying` | — |
+| `@Enumerated(STRING)` alone | passes | `'HUF'` |
+| `@JdbcTypeCode(VARCHAR)` alone | passes | `'HUF'` |
+| both | passes | `'HUF'` |
+
+Two corrections follow. **The sentence this decision used to carry — that a
+`varchar(3)` migration therefore fails `validate` under `@Enumerated(STRING)` —
+is false**, and has been removed above: the native-enum finding is about emitted
+DDL, and `validate` compares type *categories*, so it accepts a `varchar` for a
+`STRING` enum. And **the two annotations are not each covering a different
+default; either alone would do.** What is genuinely dangerous is carrying
+*neither*, because JPA then stores the enum by **ordinal** and reordering
+`Currency`'s constants silently reinterprets every row already written.
+
+Both stay anyway, and the reason is division of labour rather than redundancy:
+`@Enumerated(STRING)` states the intent JPA reads, `@JdbcTypeCode(VARCHAR)` pins
+the SQL type for the Postgres move — the one that stops mattering the moment
+anything generates DDL. `MoneyMapsToTwoColumnsTest` pins the property that
+actually protects the data: strip both and the context fails to start.
+
+**Consequence: `ddl-auto=create-drop` cannot be used with this mapping, and does
+not need to be.** Pinning `varchar` makes Hibernate's schema export add
+`check (currency in ('EUR','USD','HUF'))`. Against the throwaway
+`jdbc:h2:mem:<uuid>` database `@DataJpaTest` substitutes, *every* insert into
+that table then fails with H2's `Check constraint invalid: "CONSTRAINT_C: "`
+(23514), whose root cause is `The database has been closed` (90098). It is the
+schema-export path specifically — the identical DDL run through the test's own
+connection accepts the same insert in the same session, and plain H2 outside
+Spring accepts it too. Rather than a problem to solve this is a dead end, because
+**Hibernate emits no DDL anywhere in this application**: `validate` is the
+setting, and the way out is the arrangement the application already uses.
+`MoneyMapsToTwoColumnsTest` therefore takes its table from a migration and runs
+Hibernate on `validate`, which is the more faithful rehearsal of ticket 08
+regardless, and is why a one-entity `testsupport/moneymapping` package and a
+test-only migration directory exist. `RecordAsEmbeddableSpikeTest` still uses
+`create-drop` and is unaffected: its currency column is a native H2 enum, which
+carries no check constraint.
 
 **Seed data is not schema.** Demo accounts belong in a `@Profile("dev")`
 `CommandLineRunner`, never in a migration — a Flyway seed runs in the test

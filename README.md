@@ -59,14 +59,16 @@ correct for the current state of the build.
 
 ## What is built so far
 
-Tickets 01–05 of 44: the skeleton, schema management, the package structure the domain
+Tickets 01–06 of 44: the skeleton, schema management, the package structure the domain
 code will be written into, the security chain in front of it, the error contract every
-endpoint will answer with, and the two ecosystem bets that had to be settled first.
-**Both bets won.**
+endpoint will answer with, the value type every amount in the system is expressed in, and
+the two ecosystem bets that had to be settled first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` and `Account` are both
    records by design; if Hibernate could not instantiate one through its canonical
-   constructor, every entity's shape would have changed.
+   constructor, every entity's shape would have changed. The spike that settled it has
+   since been overtaken by the real thing — `Money` is now mapped against a hand-written
+   migration, on the same `validate` setting the application runs on.
 2. **`springdoc-openapi` works on Spring Boot 4** — on the 3.x line only; 2.x targets
    Boot 3. The generated frontend types depend on this, and so does the browser test
    strategy that rests on them.
@@ -76,6 +78,15 @@ Both are proved by tests in the repo rather than by reading changelogs:
 ```bash
 ./mvnw test -Dtest='*SpikeTest'
 ```
+
+**Money is a whole count of Minor Units — a `long` of fillér or cents — paired with the
+currency it is denominated in.** A number on its own is not money, so the two are one
+value rather than a column beside a column, and arithmetic on it refuses operands in
+differing currencies. `BigDecimal` was rejected not for drift (it is exact) but because it
+is unconstrained — nothing stops a fraction of a fillér being representable — and because
+its `equals` compares scale, so the same amount written two ways compares unequal. The
+per-currency decimal places (2 for EUR and USD, 0 for HUF) are read at the edges that
+parse and display an amount, and nowhere else: **the core never divides by a hundred.**
 
 **Flyway owns the schema** and Hibernate runs on `ddl-auto=validate`, from before the
 first table exists rather than baselined at the end. There are no migrations yet — each

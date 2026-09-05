@@ -35,6 +35,12 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
+		<!-- Bean Validation, so a rejected request is a problem document with per-field
+		     detail rather than a check written by hand in every controller. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-validation</artifactId>
+		</dependency>
 		<!-- Owns the filter chain. Present so that "no authentication" is a chain
 		     naming what it opens, rather than an absent dependency (design decision 2). -->
 		<dependency>

@@ -59,9 +59,10 @@ correct for the current state of the build.
 
 ## What is built so far
 
-Tickets 01–04 of 44: the skeleton, schema management, the package structure the domain
-code will be written into, the security chain in front of it, and the two ecosystem bets
-that had to be settled first. **Both bets won.**
+Tickets 01–05 of 44: the skeleton, schema management, the package structure the domain
+code will be written into, the security chain in front of it, the error contract every
+endpoint will answer with, and the two ecosystem bets that had to be settled first.
+**Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` and `Account` are both
    records by design; if Hibernate could not instantiate one through its canonical
@@ -132,6 +133,49 @@ Two traps are worth knowing about, because both fail quietly:
 `SecurityChainTest` asserts each of these through a running server, as an effect a caller
 can observe: a status code, a header, a cookie that is not set. A test that asserted the
 configuration methods had been called would only restate the source file.
+
+## Errors: one document, one discriminator
+
+**Every error this API emits is an RFC 9457 problem document**
+(`application/problem+json`), and a client branches on exactly one field: the `type` URN.
+Not the status code, and not a second `code` field beside the URN — two discriminators
+drift, and eventually one of them lies. The two `409`s make that concrete: the same
+status, opposite advice about retrying, told apart by their URN alone.
+
+```console
+$ curl -i localhost:8080/api/nope
+HTTP/1.1 404
+Content-Type: application/problem+json
+
+{"type":"urn:problem:not-found","title":"Not Found",
+ "status":404,"detail":"This API has no endpoint at that path.","instance":"/api/nope"}
+```
+
+The URNs live in one place — the `ProblemType` enum in `common` — so the backend and the
+frontend's generated types share one vocabulary, and a URN that stops being emitted
+becomes a type error rather than a silently dead branch in the client.
+
+The implementation is Spring's own `ResponseEntityExceptionHandler`, not a hand-rolled
+envelope. Spring already answers `@Valid` rejections, `415`, `405` and malformed JSON
+with problem documents *before* any controller code runs, so a custom shape would not
+replace those responses — it would ship a second error format beside one that cannot be
+switched off. `ProblemDocumentAdvice` adopts them and adds four things:
+
+| Addition | Why |
+|---|---|
+| A `type` URN on every response | The framework leaves `type` as `about:blank`, which forces a client back onto branching on the status code. A document that already names its type — a refusal a slice raised itself — keeps it, and a client error this API does not name more precisely gets `urn:problem:client-error` rather than the nearest-looking URN. |
+| `errors: [{ field, message }]` on a validation failure | The default packs every violation into one sentence in `detail`, which no form can mark up against the input that caused it. A rejected parameter carries the member too, so the shape does not depend on whether the bad value arrived in the body. Sorted, because Bean Validation promises no order. |
+| A `500` document for anything unhandled | Otherwise the request leaves the dispatcher for Boot's `/error` page — a different shape, derived from the exception, saying more about this server than a caller should learn. Its `detail` is a fixed sentence. |
+| `Retry-After` where retrying will help, and nowhere else | The retryable case is then machine-readably marked as such: the in-progress `409` and the exhausted FX provider's `503` carry it; the key-reuse `409` never does. |
+
+`ProblemDocumentContractTest` runs the whole contract at the web layer with no database
+behind it, putting every case through one assertion helper — which is what makes "a
+caller that has parsed one problem document has parsed all of them" a checked claim
+rather than an intention.
+
+**One error does not pass through here:** a refusal from the security filter chain is
+raised before the dispatcher and answered with an empty body. Nothing is denied on
+purpose yet; see the TODO list.
 
 ## Module boundaries
 

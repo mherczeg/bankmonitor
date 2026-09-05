@@ -49,6 +49,27 @@ the transfer source account → scoping the transactions list to the caller.
 
 ---
 
+## Errors raised before the dispatcher
+
+**Deferred.** Every error from application code is an RFC 9457 problem document
+with a `type` URN. A refusal from the Spring Security filter chain is not: it is
+raised before the dispatcher, so `ProblemDocumentAdvice` never sees it, and it
+is answered with the status alone and an empty body.
+
+**Why deferred:** nothing is denied on purpose yet. The chain denies paths it
+does not name, which is a caller asking for something that does not exist, and
+`403` with no body is a complete answer to that. The first refusal a client is
+meant to *read* arrives with the shared secret on the internal Verdict endpoint,
+and the decision belongs with it.
+
+**What it would take:** an `AuthenticationEntryPoint` and an
+`AccessDeniedHandler` on the chain that write the same document through the same
+`ProblemType` vocabulary. The advice already rethrows `AccessDeniedException`
+rather than answering it, so that translation stays where it can see the
+security context.
+
+---
+
 ## Account ownership (`User` / `Customer`)
 
 **Deferred.** `Account` is the atomic entity. No owner is modelled.

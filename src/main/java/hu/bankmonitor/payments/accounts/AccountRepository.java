@@ -1,8 +1,13 @@
 package hu.bankmonitor.payments.accounts;
 
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.repository.Repository;
 
 import java.util.List;
+import java.util.Optional;
+
+import static jakarta.persistence.LockModeType.PESSIMISTIC_WRITE;
 
 /**
  * Persistence for {@link Account}, package-private so that reaching it from another slice
@@ -33,4 +38,16 @@ interface AccountRepository extends Repository<Account, Long> {
 	 * worse starting point than an empty one.
 	 */
 	List<Account> saveAll(Iterable<Account> accounts);
+
+	/**
+	 * Reads one Account and holds a row lock on it until the surrounding transaction ends,
+	 * so no other transaction can read-for-update or write that row in the meantime.
+	 *
+	 * <p>{@link LockModeType#PESSIMISTIC_WRITE} is what turns the {@code select} into a
+	 * {@code select … for update}. Call it through {@link AccountLocking} rather than
+	 * directly: on its own it says nothing about the order two of them are taken in, and
+	 * the order is the entire deadlock argument of design decision 6.
+	 */
+	@Lock(PESSIMISTIC_WRITE)
+	Optional<Account> findAndLockById(long accountId);
 }

@@ -82,12 +82,13 @@ build.
 
 ## What is built so far
 
-Tickets 01–10 of 44: the skeleton, schema management, the package structure the domain
-code will be written into, the security chain in front of it, the error contract every
-endpoint will answer with, the value type every amount in the system is expressed in and
-the single conversion between currencies, the first entity and the first table, the first
-endpoint that writes to it and the first that reads it back, and the two ecosystem bets
-that had to be settled first. **Both bets won.**
+Tickets 01–10 and 12 of 44: the skeleton, schema management, the package structure the
+domain code will be written into, the security chain in front of it, the error contract
+every endpoint will answer with, the value type every amount in the system is expressed in
+and the single conversion between currencies, the first entity and the first table, the
+first endpoint that writes to it and the first that reads it back, the locking rule the
+concurrency design rests on, and the two ecosystem bets that had to be settled first.
+**Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type
@@ -168,6 +169,20 @@ on a renamed field is a TypeScript compile error in the frontend rather than an
 Every seeded account starts with nothing reserved, because reserving is what a Transfer
 does and transfers do not exist yet — so on a fresh `dev` start, Available Balance equals
 balance everywhere. That is the derivation working, not the demo data being flat.
+
+**The two Accounts a transfer touches are locked in ascending ID order, never by their
+role in the transfer.** Each is taken with its own `SELECT … FOR UPDATE`, in a loop over
+the sorted IDs. Were the locks taken by role, a transfer 5 → 9 would hold 5 and want 9
+while a simultaneous 9 → 5 held 9 and wanted 5, and neither could give way; ordering by ID
+makes both contend for 5 first, so the loser waits holding nothing and there is no cycle
+to form. Deadlock is structurally impossible rather than merely unlikely. The order is
+taken by this code rather than left to a single ordered query, so it is not the query
+planner's to change. The operation refuses to run outside a transaction
+(`@Transactional(propagation = MANDATORY)`), since a lock released before the balance it
+guards is checked would leave a suite that passes and a race in production. It is viable
+only because the Exchange Rate is fetched in a phase of its own before any of this: a
+transaction holding row locks must never be waiting on a slow provider, and an ArchUnit
+rule walks everything reachable from the locking operation to keep it that way.
 
 **Virtual threads are on** (`spring.threads.virtual.enabled=true`), and they are
 load-bearing rather than a nicety. The stand-in Exchange Rate provider is a real HTTP

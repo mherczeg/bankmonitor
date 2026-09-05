@@ -187,6 +187,10 @@ than replacing it. It converts an invisible ~50ms wait into a client-visible
 request and a human can see it, model it. If it only stops two concurrent
 writes inside one request, that is what the database is for.
 
+> **Built in [ticket 12](12-ordered-account-locking.md)**, which settled where
+> the order lives — two locking statements rather than one ordered query — and
+> what evidence there can be for it before ticket 13 has two threads.
+
 ---
 
 ## 7. Transfers have an asynchronous lifecycle
@@ -993,6 +997,11 @@ package-private; the **`@Transactional` method** stays public.
 > the shape the trap above prescribes — package-private class, public
 > `@Transactional` method — against a repository declaring only the methods the
 > slice calls.
+> **[Ticket 12](12-ordered-account-locking.md)** adds three more public types to
+> that line — `AccountLocking`, `LockedAccounts` and `UnknownAccountException` —
+> and is the first to depend on the `repository package-private` clause meaning
+> something: `transfers` cannot reach a balance except through the operation that
+> locks it. Still no port.
 
 ---
 

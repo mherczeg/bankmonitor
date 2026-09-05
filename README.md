@@ -29,7 +29,7 @@ as a second process.
 ./mvnw test
 ```
 
-Expect **11 passing tests** and no Docker daemon involved. The suite runs on an in-memory
+Expect **17 passing tests** and no Docker daemon involved. The suite runs on an in-memory
 H2 database; Testcontainers was rejected precisely so this command works on a clean
 machine.
 
@@ -59,8 +59,9 @@ correct for the current state of the build.
 
 ## What is built so far
 
-Tickets 01–02 of 44: the skeleton, schema management, and the two ecosystem bets that had
-to be settled before writing domain code against them. **Both won.**
+Tickets 01–03 of 44: the skeleton, schema management, the package structure the domain
+code will be written into, and the two ecosystem bets that had to be settled first.
+**Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` and `Account` are both
    records by design; if Hibernate could not instantiate one through its canonical
@@ -90,6 +91,40 @@ waits on a second thread of the same server. On a bounded pool that can deadlock
 itself; virtual threads are not scarce, which is also why the design declines a circuit
 breaker. `ApplicationBootsTest` asks the running container what kind of thread served the
 request rather than asserting the property is set — flip the flag off and it fails.
+
+## Module boundaries
+
+The code is organised **by feature, not by layer** — one package per slice of the domain,
+each documented by its own `package-info.java`:
+
+```
+hu.bankmonitor.payments
+├── accounts/      the Account entity, its endpoints, and its Reserved Amount
+├── transfers/     the Transfer lifecycle — the only package that depends on the others
+│   └── checks/    the Check Ledger, and the /internal endpoint Verdicts arrive on
+├── idempotency/   run-once-per-key replay protection      · one public port
+├── fx/            exchange rates from an unreliable provider · one public port
+├── outbox/        events written in the same transaction as the change · one public port
+├── mockfx/        the stand-in Exchange Rate provider — depends on nothing
+└── common/        Money, Currency, problem types — depended on by everything
+```
+
+Dependencies run one way: `transfers` onto `accounts`, `fx`, `idempotency` and `outbox`,
+and nothing points back. Three public ports in total.
+
+**Most of that boundary is enforced by the compiler, not by review.** Java's default
+access level is package-private, so a repository declared with no modifier is literally
+uncallable from another package — crossing the boundary does not compile.
+`ModuleBoundariesHoldTest` covers the two things the compiler cannot see: that the slices
+are free of cycles, and that no controller holds a repository — the latter matching on
+role as well as on name, because a `@RestController` called `AccountEndpoint` is the same
+mistake and a suffix rule would wave it through. Both rules are also run against fixtures
+that break them on purpose, so a rule that quietly stopped matching anything would show up
+as a failure rather than as a green tick.
+
+One trap this arrangement sets, noted where it will be hit: `@Transactional` on a
+non-public method is **silently ignored** under proxy-based AOP. The *class* may be
+package-private; the `@Transactional` *method* stays public.
 
 ## Layout
 

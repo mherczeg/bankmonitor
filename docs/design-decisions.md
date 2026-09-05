@@ -842,12 +842,24 @@ frontend plugin, no Node download and no build profile to justify it.
 
 **Flyway with `spring.jpa.hibernate.ddl-auto=validate`**, not `create-drop`.
 Partly signalling — `ddl-auto` generating schema anywhere but a throwaway
-database is a known foot-gun — but the substantive reason is that
-`V1__init.sql` is **one readable file** showing every table, type, constraint
-and index, instead of a schema reconstructed by reading annotations across six
-entity classes. It is also the natural home for the indexes the design implies:
-the outbox poller's `WHERE sent_at IS NULL`, the reaper's
+database is a known foot-gun — but the substantive reason is that the migration
+directory shows every table, type, constraint and index as SQL, instead of a
+schema reconstructed by reading annotations across six entity classes. It is
+also the natural home for the indexes the design implies: the outbox poller's
+`WHERE sent_at IS NULL`, the reaper's
 `WHERE status = 'PENDING' AND deadline < ?`.
+
+**One migration per slice, not one file up front** (amended when the work was
+broken into tickets). The original decision was a single `V1__init.sql` carrying
+the whole schema from the first commit, on the grounds that one file reads
+better than six. That would have meant writing the outbox, check-ledger and
+idempotency tables before those entities existed — schema written against a
+design rather than against code, and the one artefact that can no longer be
+checked by `validate` while it is being written. Each slice now ships the
+migration for the table it introduces (`V1__accounts.sql`,
+`V2__transfers.sql`, …), including the later ones that only add a column. What
+made the original decision worth keeping — `validate` on from the very first
+commit — is unaffected, and is the part that actually catches mismatches.
 
 **From day one, not baselined at the end.** Hibernate's implicit naming strategy
 silently maps `fromAccountId` to `from_account_id`, and a `Money` embeddable to

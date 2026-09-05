@@ -1,37 +1,30 @@
-# Design decisions
+# Initial decisions
 
-Settled in a grilling session on 2026-09-05, before any code was written.
+Settled in a grilling session on 2026-09-05, **before any code was written** —
+this file is the design as it stood when the first ticket was picked up, and it
+is not edited as the build proceeds. What each ticket settled, corrected or
+contradicted lives in its own file beside this one; see the
+[index](README.md) for the map from section to ticket.
+
 Source material for the README's architecture section. Deferrals live in
-[deferred.md](deferred.md); domain vocabulary in [../CONTEXT.md](../CONTEXT.md).
+[deferred.md](../deferred.md); domain vocabulary in [CONTEXT.md](../../CONTEXT.md).
 
 Each entry: what was decided, why, and what was rejected.
-[ADR-0001](adr/0001-asynchronous-transfer-lifecycle.md) records the one decision
+[ADR-0001](../adr/0001-asynchronous-transfer-lifecycle.md) records the one decision
 that shapes all the others.
 
-> **Verified in the first hour of building — both bets won.** Two of these
-> decisions bet that the ecosystem has caught up to Spring Boot 4. Settled in
-> ticket 01 on Spring Boot 4.1.1 / Hibernate 7 / Java 21, by tests in the repo
-> rather than by reading changelogs:
+> **Verify in the first hour of building.** Two of these decisions bet that the
+> ecosystem has caught up to Spring Boot 4. Both are cheap to check now and
+> expensive to discover late:
 >
-> 1. **Hibernate maps a Java `record` as `@Embeddable`** (§16) — **confirmed.**
->    `RecordAsEmbeddableSpikeTest` round-trips a `record` through H2, so
->    Hibernate is instantiating it through its canonical constructor. It also
->    pins down two things the domain will rely on: `@Enumerated(STRING)` on a
->    record component does propagate to the mapped field, and the implicit naming
->    strategy flattens `minorUnits` to a `minor_units` column — which is the
->    column name §29's first migration has to use. It also turned up a genuine
->    trap: `@Enumerated(STRING)` emits a **native H2 `ENUM` column, not a
->    `varchar`**, so the obvious `varchar(3)` migration would fail `validate` at
->    startup. Recorded with its remedy in §29.
-> 2. **`springdoc-openapi` supports Spring Boot 4** (§26) — **confirmed**, on the
->    **3.x line**. This is the sharp edge: springdoc 2.x targets Boot 3 and does
->    not work here; 3.1.0 is itself built against `spring-boot-starter-parent`
->    4.1.0. `OpenApiDocumentSpikeTest` asserts the document contains a known
->    controller's path and its record response schema, not merely that
->    `/v3/api-docs` returns `200` — an empty but valid skeleton would have passed
->    the weaker check while leaving §26's generated types just as impossible.
+> 1. **Hibernate maps a Java `record` as `@Embeddable`** (§16) — supported since
+>    Hibernate 6.2, and Boot 4 ships Hibernate 7. If not, every entity's shape
+>    changes.
+> 2. **`springdoc-openapi` supports Spring Boot 4** (§26) — if not, the
+>    generated-types safety net for the frontend does not exist.
 >
-> Neither bet needed a [deferred.md](deferred.md) entry as a result.
+> *Both bets won, and one of them turned up a trap — see
+> [ticket 01](01-project-skeleton.md).*
 
 ---
 
@@ -75,47 +68,8 @@ preflight `OPTIONS` requests. Needs `.cors(withDefaults())` *and* a
 will not work. Symptom is opaque CORS failures in the browser while `curl`
 works.
 
-**Built in ticket 04, deny-by-default rather than permit-by-default.**
-`anyRequest().denyAll()`, with `/api/**`, `/actuator/health` and the springdoc
-paths named above it. The permissive version — `anyRequest().permitAll()` — is
-the same thing for today's application and a different thing for tomorrow's:
-under it, ticket 21's `/internal/**` prefix is reachable from the moment the
-controller is written and stays reachable if its rule is ever removed, while
-under this one it is unreachable until an entry exists. Deny-by-default is also
-what makes the permits worth reading, since each one is a path someone chose to
-open. `SecurityChainTest` asserts effects a caller can see — a status code, a
-missing `Set-Cookie` — because a test asserting `csrf().disable()` was called
-would only restate the source file.
-
-A denial's body is currently empty rather than an §18 problem document, which
-does not matter while nothing is denied on purpose. It becomes ticket 21's to
-answer, when `/internal/**` produces the first refusal a caller is meant to
-read.
-
-**Rejected — `WebSecurityCustomizer.ignoring()` on `/api/**`.** It is the total
-bypass §28 uses for the mock provider, and here it would forgo the security
-response headers as well as the authorization rule. A permitted request still
-passes through the chain; an ignored one is not a decision, it is an absence.
-
-**Rejected — leaving `UserDetailsServiceAutoConfiguration` in place.** The
-starter generates an in-memory account with a random password and prints it at
-every startup under a warning to replace the configuration before production.
-Harmless, since nothing authenticates — and precisely the "unfinished, not
-decided" reading this section exists to avoid, printed in the reviewer's console
-at every boot. Excluded on the application class.
-
-**Rejected — omitting CORS on the grounds that §20's dev proxy makes the
-frontend same-origin.** True for proxied calls and false for every other caller:
-Swagger UI, a second frontend origin, any deployment that does not proxy. The
-policy is enumerated rather than wildcarded for the same reason the chain denies
-by default — a wildcard states no intent, so nothing about it can later be read
-as wrong.
-
-The README carries the settings themselves and the two traps they avoid, since
-that is what a maintainer inherits. Both traps fail quietly rather than loudly,
-which is the only reason they are worth a paragraph anywhere: the `ERROR`
-dispatch one returns a plausible wrong status rather than an error, and the
-`Retry-After` one is invisible outside a browser.
+> **Built in [ticket 04](04-security-chain-cors.md)**, deny-by-default rather than
+> permit-by-default, with three alternatives rejected in the writing.
 
 ---
 
@@ -236,7 +190,7 @@ writes inside one request, that is what the database is for.
 time; the money moves at settlement.
 
 The reasoning, what it cost, and the rejected alternatives are in
-[ADR-0001](adr/0001-asynchronous-transfer-lifecycle.md) — the one decision here
+[ADR-0001](../adr/0001-asynchronous-transfer-lifecycle.md) — the one decision here
 a fresh reader would otherwise "simplify" back to synchronous. Sections 8–15
 below are its mechanics.
 
@@ -298,7 +252,7 @@ enforce, which is what makes the whole configuration legible.
 Not a contradiction of §2 — that declined to model *user* identity. This is
 service-to-service trust across a boundary, a different concern created by the
 async model. A separate port is the production hardening step (see
-[deferred.md](deferred.md)).
+[deferred.md](../deferred.md)).
 
 ---
 
@@ -331,7 +285,7 @@ Hand-rolled (~55 lines) rather than adopting Spring Modulith's Event
 Publication Registry, because the outbox is one of the few places the task asks
 for demonstrated architectural judgement and a dependency demonstrates less of
 it than code you can defend. Modulith and Kafka are named in the README as the
-production answers — see [deferred.md](deferred.md).
+production answers — see [deferred.md](../deferred.md).
 
 In this build `publish()` writes a structured log line, and a profile-gated
 `StubFraudDetection` consumes `CheckRequested` and reports a verdict a beat
@@ -356,7 +310,7 @@ exactly this way.
 What banks run *underneath* is double-entry: balances are a materialized
 projection over a posting log, with internal accounts (suspense, clearing, FX
 position) absorbing cross-currency differences so each currency's books balance
-independently. Deferred deliberately — see [deferred.md](deferred.md).
+independently. Deferred deliberately — see [deferred.md](../deferred.md).
 
 ---
 
@@ -436,44 +390,15 @@ HUF→EUR, USD→EUR, same-currency (no provider call at all), and round-to-zero
 
 **Honest consequence: money is not conserved across the two accounts.** The
 rounding remainder vanishes. That is what the double-entry deferral costs — see
-[deferred.md](deferred.md).
+[deferred.md](../deferred.md).
 
 **Verify in the first hour:** Hibernate's support for `record` types as
 `@Embeddable`. It has been supported since Hibernate 6.2 and Boot 4 ships
 Hibernate 7, but a wrong assumption here re-shapes every entity.
 
-### As built (ticket 06)
-
-`record Money(long minorUnits, Currency currency)` and `enum Currency` in
-`common`, with **four methods and no more**: `zero`, `plus`, `minus`,
-`isLessThan`. Each of the three that takes an operand rejects a differing
-currency with an `IllegalArgumentException` naming both.
-
-**The surface is deliberately smaller than the type could support.** A value
-type invites a full complement — `isNegative`, `isPositive`, `isZero`,
-`negate`, `times` — and every one of them was rejected on the same ground:
-nothing calls it. The tickets that need more (08's balances, 13's overdraft
-check, 26's conversion) can add exactly what they use, against a real call
-site, rather than this ticket guessing at the shape from one ticket away.
-
-**Rejected — `implements Comparable<Money>`.** It reads as the obvious way to
-express ordering, and it cannot be honoured: `compareTo` has to be total, so a
-`Money` comparison across currencies would either have to invent an order
-between euros and forints or throw from a method whose contract says it does
-not. Throwing also silently breaks anything that sorts or puts `Money` in a
-`TreeMap`. A named `isLessThan` that throws is a method whose documentation is
-free to say so.
-
-**Negative amounts are representable, on purpose.** A difference between two
-amounts is money, and refusing to hold one here would push the subtraction out
-to bare `long`s where nothing checks the currency. "A balance may not go
-negative" is the *Account's* invariant, and §13's reservation is where it is
-enforced.
-
-**Overflow throws rather than wraps** — `Math.addExact` / `Math.subtractExact`.
-Java's `+` wrapping silently is the one way a count of Minor Units can
-represent a quantity that is not the answer, which is the property the whole
-decision was chosen for.
+> **Confirmed in [ticket 01](01-project-skeleton.md)** and **built in
+> [ticket 06](06-money-and-currency.md)**, with a surface deliberately smaller
+> than the type could support.
 
 ---
 
@@ -525,7 +450,8 @@ discriminator** — not `type` *and* a `code` field, because two discriminators
 drift and eventually one of them lies.
 
 *(This section was written expecting `spring.mvc.problemdetails.enabled=true` to
-be the switch. It is not the one this build uses — see "As built" below.)*
+be the switch. It is not the one this build uses — see
+[ticket 05](05-problem-detail-contract.md).)*
 
 **Rejected — a hand-rolled error envelope.** Spring already emits
 `ProblemDetail` for framework-level failures: `@Valid` rejections, `415`,
@@ -536,7 +462,7 @@ shape alongside one you cannot switch off.
 Attached to this:
 
 - **`Retry-After` on the in-progress `409`, absent on the key-reuse `409`.**
-  That gives [deferred.md](deferred.md)'s retry-semantics entry something
+  That gives [deferred.md](../deferred.md)'s retry-semantics entry something
   concrete: the retryable case is machine-readably marked as such.
 - **Field-level validation errors as an extension member.** Spring's default
   packs every violation into one unusable sentence; the form needs them per
@@ -547,82 +473,8 @@ This supersedes §5's mention of a separate `code` field: the two `409` cases ar
 distinguished by their `type` URN (`urn:problem:request-in-progress` vs
 `urn:problem:idempotency-key-reused`).
 
-### As built (ticket 05)
-
-`ProblemDocumentAdvice extends ResponseEntityExceptionHandler`, in the root
-package beside the security chain, plus a `ProblemType` enum in `common`.
-
-**`spring.mvc.problemdetails.enabled=true` is not in
-`application.properties`, and its absence is deliberate.** The property enables
-Boot's own `ProblemDetailsExceptionHandler`, which is annotated
-`@ConditionalOnMissingBean(ResponseEntityExceptionHandler.class)` — declaring
-ours makes Boot's back off, so the property would be a setting with no reader.
-Anyone deleting the advice has to put the property back, which is exactly the
-sentence the class Javadoc carries.
-
-**Rejected — resolving the URNs from a `messages.properties` message source.**
-Spring will read `problemDetail.type.<exception FQCN>` keys and fill `type`
-from them without a line of Java, which is the framework-idiomatic answer and
-was rejected on the ticket's own terms: the URNs would then live in a
-properties file *and* in the enum the frontend's generated types are supposed
-to agree with, which is two places for the vocabulary that exists to have one.
-
-**The URN is chosen from the response status, not from the exception class**,
-with one refinement: a body Jackson could not read (`urn:problem:malformed-request`)
-and a body that failed its constraints (`urn:problem:validation-failed`) are both
-`400` and are not the same news. Mapping by exception class looks more precise and
-is not: `ConversionNotSupportedException` extends `TypeMismatchException` — a
-client-error type — but is a `500`, so the exception-driven version answered a
-server fault with a document blaming the caller's input. A client error this API
-does not name more precisely gets `urn:problem:client-error` rather than the
-nearest-looking URN; a discriminator that guesses is the field that eventually
-lies.
-
-Five things the ticket did not ask for and that the implementation needed
-anyway:
-
-- **A catch-all `@ExceptionHandler(Exception.class)` → `500`
-  `urn:problem:internal-error`.** Without it, an exception no handler claims
-  leaves the dispatcher for Boot's `/error` page, which is a *different*
-  document shape derived from the exception — a second error format arriving
-  through the back door, and one that tells the caller more about this server
-  than it should. Its detail is a fixed sentence for the same reason.
-- **`AccessDeniedException` is rethrown from its own handler**, so Spring
-  Security's translation still runs. Caught by the catch-all it would become a
-  `500`, and §10's shared-secret rule would fail as a server error rather than
-  a refusal — silently, since nothing would log a mismatch.
-- **`NoResourceFoundException`'s detail is replaced.** The framework says *"No
-  static resource api/nope."*, which names the handler that ran out of options;
-  this API serves no static resources and the caller can act on none of that.
-  The path is already in `instance`, so the replacement does not repeat it.
-- **The `errors` list is sorted.** Bean Validation does not promise an order,
-  and a form that lists its errors differently on each submission looks like a
-  bug to the person filling it in.
-- **A rejected *parameter* carries the member too**, not only a rejected body.
-  Spring reports the two through different exceptions
-  (`HandlerMethodValidationException` vs `MethodArgumentNotValidException`);
-  handling only the second would make the document's shape depend on where the
-  rejected value arrived, which is a distinction the client cannot see. §16's
-  idempotency key header is the case that would have hit it.
-
-The extension member is `errors: [{ field, message }]`, with a null `field` for
-a class-level rule that belongs to the request rather than to one input — the
-shape §22's cross-field validators produce on the server side.
-
-**`Retry-After` stays the throw site's job**, rather than becoming a
-`ProblemType`-owned refusal factory that attaches it. The policy is one line —
-present on `REQUEST_IN_PROGRESS` and `FX_PROVIDER_UNAVAILABLE`, absent on
-`IDEMPOTENCY_KEY_REUSED` — and there is no throw site in `main` yet, so a
-factory now would be an abstraction shaped by a guess about §5's and §27's call
-sites rather than by them. What this ticket owes them is that the *client* can
-read the distinction, which the contract test pins through a probe controller
-raising both `409`s.
-
-`ProblemDocumentContractTest` is a `@WebMvcTest` over that probe controller in
-`testsupport`: no database, one assertion helper that every case runs through,
-so "the framework's failures and ours are the same document" is checked rather
-than asserted in prose. Deleting the `@ControllerAdvice` annotation fails all
-ten of its tests.
+> **Built in [ticket 05](05-problem-detail-contract.md)**, with five things the
+> ticket did not ask for and that the implementation needed anyway.
 
 ---
 
@@ -640,7 +492,7 @@ filtering pending transfers out of the only list screen throws both away.
 Consequence for the vocabulary: `Transaction` stops being an entity. One list
 showing every status means a second word for "a transfer that has been
 recorded" earns nothing, so it survives only as the screen's label. See
-[../CONTEXT.md](../CONTEXT.md).
+[CONTEXT.md](../../CONTEXT.md).
 
 ---
 
@@ -658,7 +510,7 @@ The build tool then falls out: Vite. (CRA is deprecated.)
 **Two processes, documented rather than papered over:** `./mvnw spring-boot:run`
 and `npm run dev`, with Vite proxying `/api` and `/internal`. Improving the
 developer experience is a stretch goal, not a requirement; single-jar packaging
-goes to [deferred.md](deferred.md) *together with* the SPA-fallback trap it
+goes to [deferred.md](../deferred.md) *together with* the SPA-fallback trap it
 creates, so that trap is not rediscovered from scratch.
 
 **Trap now:** the Vite dev proxy must not buffer the SSE stream. If it does,
@@ -827,7 +679,7 @@ event cannot be pushed mid-test, which is exactly what asserting
 
 That drives §17's design end to end — thin event → invalidate → refetch →
 render — deterministically, with no `waitForTimeout`. True E2E goes to
-[deferred.md](deferred.md) with its gap named.
+[deferred.md](../deferred.md) with its gap named.
 
 ---
 
@@ -866,37 +718,6 @@ the design decision:
   lifecycle. *Konkurencia és adatintegritás* is a named graded requirement, so
   these are the tests that count.
 
-**Boot 4 moved the furniture** (found while writing ticket 01's tests, recorded
-here because every tutorial and every model's training data predates it):
-
-- **`TestRestTemplate` no longer exists.** The replacement is Spring Framework
-  7's `RestTestClient`, used as
-  `RestTestClient.bindToServer().baseUrl("http://localhost:" + port).build()`
-  with a fluent `.expectStatus()` / `.jsonPath()` API. Reach for it in any
-  `@SpringBootTest(webEnvironment = RANDOM_PORT)`.
-- **The slice annotations changed packages**, and the compiler error for these
-  is an unhelpful "cannot find symbol":
-  `@DataJpaTest` → `org.springframework.boot.data.jpa.test.autoconfigure`,
-  `TestEntityManager` → `org.springframework.boot.jpa.test.autoconfigure`,
-  `@EntityScan` → `org.springframework.boot.persistence.autoconfigure`.
-- **Starters were split by slice.** It is `spring-boot-starter-webmvc`, not
-  `spring-boot-starter-web`, and test support arrives as one `*-test` starter
-  per slice (`spring-boot-starter-webmvc-test`, `-data-jpa-test`, …) rather than
-  a single `spring-boot-starter-test`.
-- **`TestEntityManager` does not resolve as a constructor parameter** —
-  `ParameterResolutionException` at runtime, not a compile error. Use
-  `@Autowired` field injection.
-
-One trap that is not Boot 4's fault but shows up the moment tests need their own
-`@Entity` or `@RestController`: **test sources share the runtime classpath with
-main sources**, so anything annotated under `hu.bankmonitor.payments` in
-`src/test` is component-scanned into *every* `@SpringBootTest` in the suite.
-Ticket 01 keeps its throwaway entity and probe controller in
-`hu.bankmonitor.testsupport` — deliberately outside the scan root — and
-`@Import`s or `@EntityScan`s them explicitly. This gets sharper from ticket 02:
-once Flyway owns the schema and `ddl-auto=validate` is on, one leaked test entity
-with no migration behind it fails startup for every database test there is.
-
 **Three traps:**
 
 - **Context caching.** `@SpringBootTest` boots the application context once and
@@ -924,7 +745,11 @@ Realistic suite, 15–20 tests:
   `SETTLED`; FX provider fails twice then succeeds
 
 H2's behaviour is close enough for these to be meaningful, but not identical to
-Postgres — see [deferred.md](deferred.md).
+Postgres — see [deferred.md](../deferred.md).
+
+> **[Ticket 01](01-project-skeleton.md) found that Boot 4 moved the furniture**
+> under all of this, and that test sources component-scan into every
+> `@SpringBootTest` in the suite.
 
 ---
 
@@ -941,10 +766,13 @@ in exactly one place.
 
 Caveats: the generated file is checked in and regenerated by hand, so it needs a
 CI check or at minimum a README line — otherwise it goes stale, which is its own
-[deferred.md](deferred.md) entry. **Verify springdoc's Spring Boot 4 support in
+[deferred.md](../deferred.md) entry. **Verify springdoc's Spring Boot 4 support in
 the first hour**, alongside §16's Hibernate question. Both are "has the
 ecosystem caught up to Boot 4" bets: cheap to check now, expensive to discover
 late.
+
+> **Confirmed in [ticket 01](01-project-skeleton.md)**, on springdoc's 3.x line
+> — 2.x targets Boot 3 and does not work here.
 
 ---
 
@@ -974,7 +802,7 @@ answer to the "handle the flaky API elegantly" requirement.
 **Rejected — a circuit breaker.** A breaker exists to protect a scarce thread
 pool from being consumed by calls that will fail. Virtual threads mean threads
 are not scarce, and the retry budget is already bounded by the timeout. Goes to
-[deferred.md](deferred.md).
+[deferred.md](../deferred.md).
 
 **Rejected — caching rates.** A legitimate want, declined on scope. If it comes
 back: §15 already stores the fetch timestamp on the transfer, so a cached rate
@@ -1006,7 +834,7 @@ capability the in-process endpoint already provides. In tests, Spring's
 **`MockRestServiceServer`** covers it with no new dependency — it binds to
 `RestClient.builder()` and scripts `503, 503, 200` cleanly. It sits *above* the
 transport, though, so it **cannot exercise the read timeout** →
-[deferred.md](deferred.md).
+[deferred.md](../deferred.md).
 
 **It must stay out of the application's cross-cutting layers**, or it stops
 being a believable third party. Five distinct Spring mechanisms, each doing one
@@ -1066,103 +894,18 @@ silently maps `fromAccountId` to `from_account_id`. With `validate` on from the
 first commit, each mismatch fails at startup naming the exact column; discovered
 at the end, they arrive all at once.
 
-**Corrected by ticket 06.** This decision used to claim the same strategy
-prefixes an embeddable's columns with the field name — a `Money` field `amount`
-becoming `amount_minor_units` / `amount_currency`. It does not. The component's
-own names are used unchanged: `minor_units` and `currency`, asserted by
-`MoneyMapsToTwoColumnsTest`. An `Account` holding both a balance and a Reserved
-Amount therefore needs `@AttributeOverride` or the two embeddables collide on
-the same two columns, which is ticket 08's first job. Note while writing those
-overrides that `@AttributeOverride` replaces the component's `@Column`
-wholesale — which is why `Money` deliberately carries **no** `@Column(length = 3)`,
-a pin that would silently stop applying at the first override. `@JdbcTypeCode` is
-a separate annotation and is expected to survive an override; nothing here has
-tested that yet, so ticket 08 should confirm it rather than assume it.
-
-**Column *types* are the sharper half of that, and ticket 01's spike found one
-that would otherwise have cost an afternoon.** `@Enumerated(EnumType.STRING)` on
-Hibernate 7 / H2 does **not** produce a `varchar`. It emits a **native H2 `ENUM`**:
-
-```sql
-create table spike_embeddable_host (
-    id bigint generated by default as identity,
-    minor_units bigint,
-    currency enum ('EUR','HUF','USD'),   /* not varchar(3) */
-    primary key (id)
-)
-```
-
-There are two ways to answer that, and the choice belongs in the entity rather
-than in the migration: write `enum (...)` in the migration and accept an
-H2-specific column type, or pin the mapping with
-`@JdbcTypeCode(SqlTypes.VARCHAR)` on the component and write `varchar`.
-
-**Prefer the second.** The TODO list already marks verifying this schema against
-Postgres as a production prerequisite, and a native H2 enum is exactly the kind
-of thing that will not survive that move.
-`RecordAsEmbeddableSpikeTest.mapsEnumComponentToNativeEnumColumn` asserts the
-current behaviour, so changing it later is a visible decision rather than a
-silent drift.
-
-**Ticket 06 measured the whole table, and it is not what this decision assumed.**
-The spike settled what Hibernate *emits* under `create-drop` and this decision
-inferred the rest. Removing each annotation from `Money` in turn and running
-`MoneyMapsToTwoColumnsTest` — table from a migration declaring
-`currency varchar(3)`, Hibernate on `validate` — gives:
-
-| on the component | `validate` | stored |
-|---|---|---|
-| nothing | **fails**: expects `tinyint`, found `character varying` | — |
-| `@Enumerated(STRING)` alone | passes | `'HUF'` |
-| `@JdbcTypeCode(VARCHAR)` alone | passes | `'HUF'` |
-| both | passes | `'HUF'` |
-
-Two corrections follow. **The sentence this decision used to carry — that a
-`varchar(3)` migration therefore fails `validate` under `@Enumerated(STRING)` —
-is false**, and has been removed above: the native-enum finding is about emitted
-DDL, and `validate` compares type *categories*, so it accepts a `varchar` for a
-`STRING` enum. And **the two annotations are not each covering a different
-default; either alone would do.** What is genuinely dangerous is carrying
-*neither*, because JPA then stores the enum by **ordinal** and reordering
-`Currency`'s constants silently reinterprets every row already written.
-
-Both stay anyway, and the reason is division of labour rather than redundancy:
-`@Enumerated(STRING)` states the intent JPA reads, `@JdbcTypeCode(VARCHAR)` pins
-the SQL type for the Postgres move — the one that stops mattering the moment
-anything generates DDL. `MoneyMapsToTwoColumnsTest` pins the property that
-actually protects the data: strip both and the context fails to start.
-
-**Consequence: `ddl-auto=create-drop` cannot be used with this mapping, and does
-not need to be.** Pinning `varchar` makes Hibernate's schema export add
-`check (currency in ('EUR','USD','HUF'))`. Against the throwaway
-`jdbc:h2:mem:<uuid>` database `@DataJpaTest` substitutes, *every* insert into
-that table then fails with H2's `Check constraint invalid: "CONSTRAINT_C: "`
-(23514), whose root cause is `The database has been closed` (90098). It is the
-schema-export path specifically — the identical DDL run through the test's own
-connection accepts the same insert in the same session, and plain H2 outside
-Spring accepts it too. Rather than a problem to solve this is a dead end, because
-**Hibernate emits no DDL anywhere in this application**: `validate` is the
-setting, and the way out is the arrangement the application already uses.
-`MoneyMapsToTwoColumnsTest` therefore takes its table from a migration and runs
-Hibernate on `validate`, which is the more faithful rehearsal of ticket 08
-regardless, and is why a one-entity `testsupport/moneymapping` package and a
-test-only migration directory exist. `RecordAsEmbeddableSpikeTest` still uses
-`create-drop` and is unaffected: its currency column is a native H2 enum, which
-carries no check constraint.
-
 **Seed data is not schema.** Demo accounts belong in a `@Profile("dev")`
 `CommandLineRunner`, never in a migration — a Flyway seed runs in the test
 suite too.
 
-**The dependency is `spring-boot-flyway`, not `flyway-core`.** Boot 4 split
-auto-configuration out of `spring-boot-autoconfigure` into one module per
-technology, so the coordinates every pre-Boot-4 answer gives you put the Flyway
-library on the classpath with nothing to run it. The failure has no error and no
-warning: the application starts, `ddl-auto=validate` passes against an empty
-schema, and the first migration silently never runs.
-`FlywayOwnsTheSchemaTest.flywayRunsAtStartup` asks the database for the schema
-history table rather than trusting that the dependency implies the behaviour,
-which is what caught it.
+> This is the section the build has argued with most.
+> **[Ticket 01](01-project-skeleton.md)** found what column type
+> `@Enumerated(STRING)` actually emits; **[ticket 02](02-flyway-wiring.md)**
+> found that the obvious Flyway dependency does not run migrations at all;
+> **[ticket 06](06-money-and-currency.md)** measured the mapping and corrected
+> two things this section assumed about it. Both were false sentences and have
+> been struck from the text above rather than left to mislead; ticket 06's file
+> records what they said and what replaced them.
 
 ---
 
@@ -1210,13 +953,16 @@ atomicity quietly stops existing. Spring 6 relaxed this for CGLIB proxies, but
 the failure mode is silent either way. Rule: the **class** may be
 package-private; the **`@Transactional` method** stays public.
 
+> **Built in [ticket 03](03-package-skeleton-archunit.md)**, where the ArchUnit
+> rules needed violation fixtures to be worth anything.
+
 ---
 
 ## 31. Residual API decisions
 
-- **No API versioning.** No `/v1` prefix → [deferred.md](deferred.md).
+- **No API versioning.** No `/v1` prefix → [deferred.md](../deferred.md).
 - **No pagination.** All queries return everything →
-  [deferred.md](deferred.md).
+  [deferred.md](../deferred.md).
 - **Account creation:** `POST /api/accounts` takes a currency and an initial
   balance. **Currency is immutable thereafter** — an account that could change
   denomination would make every historical balance ambiguous.

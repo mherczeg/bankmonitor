@@ -7,7 +7,7 @@ services.
 > **This README is a stub.** It exists so the work can be verified while it is being
 > built. The full write-up — architecture, decisions and rejections, edge cases, the
 > TODO list and production readiness — is the last ticket in the plan, and will replace
-> this file. Until then the reasoning lives in [`docs/design-decisions.md`](docs/design-decisions.md),
+> this file. Until then the reasoning lives in [`docs/design-decisions/`](docs/design-decisions/),
 > the vocabulary in [`CONTEXT.md`](CONTEXT.md), and the plan in
 > [`.scratch/global-payment-service/`](.scratch/global-payment-service/).
 
@@ -228,7 +228,7 @@ package-private; the `@Transactional` *method* stays public.
 pom.xml, src/               the Spring Boot application
 frontend/                   the React app (not yet created)
 CONTEXT.md                  domain vocabulary — the words this codebase uses
-docs/design-decisions.md    what was chosen, why, and what was rejected
+docs/design-decisions/      what was chosen, why, and what was rejected
 docs/deferred.md            what was consciously left out, and what it would take
 docs/adr/                   the one decision that shapes the others
 .scratch/                   the spec and all 44 tickets

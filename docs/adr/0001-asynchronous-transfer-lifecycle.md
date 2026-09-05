@@ -41,7 +41,7 @@ rejected, and rejects the moment any row is rejected. Verdicts arrive from
 outside; the orchestrator does not care whether they came from a service or a
 human.
 
-See [design-decisions.md](../design-decisions.md) §7–§15 for the mechanics.
+See [design-decisions/00-initial-decisions.md](../design-decisions/00-initial-decisions.md) §7–§15 for the mechanics.
 
 ## Consequences
 

@@ -29,7 +29,7 @@ flag it — do not quietly route around it.
 - [x] A test in the repo demonstrates Hibernate mapping a Java `record` as `@Embeddable`
 - [x] An OpenAPI document is served by the running application
 - [x] Either spike failing is written up in `docs/deferred.md` with its consequence
-      — not applicable, both spikes passed; outcomes recorded in `docs/design-decisions.md`
+      — not applicable, both spikes passed; outcomes recorded in `docs/design-decisions/01-project-skeleton.md`
 
 ## Comments
 
@@ -51,8 +51,8 @@ by tests rather than by changelog:
 
 Since neither failed, `docs/deferred.md` is unchanged.
 
-**Boot 4 API drift found while writing the tests**, recorded in `docs/design-decisions.md`
-§25 because every tutorial predates it: `TestRestTemplate` is gone (use Spring Framework
+**Boot 4 API drift found while writing the tests**, recorded in `docs/design-decisions/01-project-skeleton.md`
+because every tutorial predates it: `TestRestTemplate` is gone (use Spring Framework
 7's `RestTestClient`); the slice annotations moved packages; starters split per slice
 (`spring-boot-starter-webmvc`, not `-web`); `TestEntityManager` will not resolve as a
 constructor parameter.
@@ -62,7 +62,7 @@ Hibernate 7 / H2 emits a **native H2 `ENUM` column, not a `varchar`**:
 `currency enum ('EUR','HUF','USD')`. Ticket 02 turns on `ddl-auto=validate`, so a
 migration writing the obvious `currency varchar(3)` would fail at startup.
 `RecordAsEmbeddableSpikeTest.mapsEnumComponentToNativeEnumColumn` pins the behaviour and
-`docs/design-decisions.md` §29 records the remedy — prefer
+`docs/design-decisions/01-project-skeleton.md` records the remedy — prefer
 `@JdbcTypeCode(SqlTypes.VARCHAR)` on the component over an H2-specific migration, since a
 native H2 enum will not survive the Postgres verification the TODO list already lists as
 a production prerequisite.

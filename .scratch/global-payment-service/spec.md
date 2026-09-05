@@ -4,7 +4,7 @@ Status: ready-for-agent
 
 Sources: [TASK.md](../../TASK.md) · [CONTEXT.md](../../CONTEXT.md) ·
 [ADR-0001](../../docs/adr/0001-asynchronous-transfer-lifecycle.md) ·
-[design-decisions.md](../../docs/design-decisions.md) (§ references throughout) ·
+[design decisions](../../docs/design-decisions/) (§ references are to `00-initial-decisions.md`) ·
 [deferred.md](../../docs/deferred.md)
 
 This spec covers the initial build. The architecture was settled in a grilling
@@ -313,7 +313,8 @@ requests; neither is a modelled entity. See Further Notes.
 ## Implementation Decisions
 
 Every decision below is recorded in full — with what was rejected and why — in
-[design-decisions.md](../../docs/design-decisions.md). Section numbers are
+[design-decisions/00-initial-decisions.md](../../docs/design-decisions/00-initial-decisions.md).
+Section numbers are
 given so the reasoning is one hop away; this list is the shape, not the
 argument.
 
@@ -828,6 +829,6 @@ each.
 [ADR-0001](../../docs/adr/0001-asynchronous-transfer-lifecycle.md) first — it is
 the one decision a fresh reader would otherwise "simplify" back to synchronous,
 and §§7–15 of the design record are its mechanics. Then
-[design-decisions.md](../../docs/design-decisions.md) §§3–6 for the request
+[00-initial-decisions.md](../../docs/design-decisions/00-initial-decisions.md) §§3–6 for the request
 pipeline, which is where the graded concurrency requirements are actually
 answered.

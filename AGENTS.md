@@ -23,7 +23,7 @@ Write an inline comment only when the code genuinely cannot carry the informatio
 - a warning where the obvious edit is the wrong one
 
 Do not comment *what* the code does, restate a name, or narrate a decision. If an
-explanation needs a paragraph, it belongs in `docs/design-decisions.md` with at most a
+explanation needs a paragraph, it belongs in `docs/design-decisions/` with at most a
 one-line pointer from the code. A comment that repeats the design record is a second copy
 to keep in sync, and it will drift.
 
@@ -32,16 +32,30 @@ Configuration files are the exception: a setting cannot be renamed to explain it
 
 ## Design decisions
 
-Settled architectural decisions live in `docs/design-decisions.md` — what was chosen, why, and what was rejected. Read it before proposing an approach; several options in there were considered and rejected for reasons that are not obvious from the code.
+Settled architectural decisions live in `docs/design-decisions/` — what was chosen, why, and what was rejected. Read it before proposing an approach; several options in there were considered and rejected for reasons that are not obvious from the code.
 
-**It is scaffolding, not a deliverable.** `docs/design-decisions.md`, `docs/deferred.md`
+The folder is split so the plan stays separable from what the build found out, and
+`docs/design-decisions/README.md` indexes both halves:
+
+- `00-initial-decisions.md` holds §1–§31 as settled before the first ticket. **Treat it as
+  a fixed point** — do not edit it to record what a ticket discovered.
+- One file per ticket (`04-security-chain-cors.md`, …) holds only what that ticket
+  settled, corrected or contradicted, named after its issue file. A ticket that changed
+  nothing about the design gets no file.
+
+When a ticket contradicts a section, say so in the ticket's file, and leave §N alone
+unless it states something now known to be **false** — in which case correct the false
+sentence in place and record the correction, with its evidence, in the ticket's file. Add
+a one-line pointer under §N to any ticket file that amends it, and a row to the index.
+
+**It is scaffolding, not a deliverable.** `docs/design-decisions/`, `docs/deferred.md`
 and `.scratch/` exist to carry reasoning between tickets while the thing is being built,
 and are disposable once it is. What a maintainer inherits is `README.md`, the READMEs that
 sit next to the code they govern, `CONTEXT.md`, and Javadoc.
 
 So when the same fact belongs in both, **the durable document gets the full statement and
 the design record gets the reasoning and the rejected alternatives.** Deduplicating the
-other way — trimming a surviving document down to a pointer at `design-decisions.md` —
+other way — trimming a surviving document down to a pointer at `design-decisions/` —
 reads as removing a duplicate and is actually removing the copy that was going to survive.
 The one-line-pointer rule under *Code style* is about comments in code, which sit beside
 the thing they describe; it does not apply to a document that has to stand on its own.

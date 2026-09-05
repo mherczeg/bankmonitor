@@ -42,7 +42,7 @@ trap — the four things that will bite whoever writes the next `V`.
 
 Review flagged the naming and type material as a second copy of design decision 29 and it
 was trimmed to a pointer, which was the wrong direction and has been put back.
-`docs/design-decisions.md` is scaffolding for the build and goes away with it; this README
+`docs/design-decisions/` is scaffolding for the build and goes away with it; this README
 ships with the code and is read while maintaining it. Deduplicating toward the disposable
 document leaves the surviving one pointing at nothing. Recorded in `AGENTS.md` so the next
 review resolves it the same way.

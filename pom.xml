@@ -17,12 +17,7 @@
 
 	<properties>
 		<java.version>21</java.version>
-		<!--
-		  springdoc 3.x is the Spring Boot 4 line: 3.1.0 is itself built against
-		  spring-boot-starter-parent 4.1.0. The 2.x line targets Boot 3 and does
-		  not work here. See OpenApiDocumentSpikeTest for the check that keeps
-		  this honest rather than assumed.
-		-->
+		<!-- 3.x is the Spring Boot 4 line; 2.x targets Boot 3 and does not work here. -->
 		<springdoc.version>3.1.0</springdoc.version>
 	</properties>
 
@@ -40,18 +35,6 @@
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
 
-		<!--
-		  Deliberately absent until something uses it: spring-boot-starter-validation,
-		  and the -validation-test / -actuator-test slices. Nothing here validates a
-		  request body yet; the first @Valid arrives with the account and transfer DTOs.
-
-		  The rule this POM follows is that a dependency appears when a line of code
-		  needs it. Worth stating explicitly because `mvn dependency:analyze` cannot
-		  check it for you: starters are aggregator POMs carrying no classes of their
-		  own, so it reports every one of them as "unused declared" whether it is or not.
-		-->
-
-
 		<!-- Serves /v3/api-docs, which ticket 32 turns into the frontend's API types. -->
 		<dependency>
 			<groupId>org.springdoc</groupId>
@@ -59,10 +42,8 @@
 			<version>${springdoc.version}</version>
 		</dependency>
 
-		<!--
-		  H2 runs the application and the test suite alike (design decision 25).
-		  Testcontainers was rejected so that `./mvnw test` needs no Docker daemon.
-		-->
+		<!-- Runs the app and the tests alike; Testcontainers was rejected so
+		     `./mvnw test` needs no Docker daemon (design decision 25). -->
 		<dependency>
 			<groupId>com.h2database</groupId>
 			<artifactId>h2</artifactId>

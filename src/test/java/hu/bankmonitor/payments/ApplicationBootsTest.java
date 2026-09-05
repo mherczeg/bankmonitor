@@ -13,6 +13,10 @@ import org.junit.jupiter.api.Test;
  */
 class ApplicationBootsTest extends BootedApplicationTest {
 
+	/**
+	 * The datasource is part of the health aggregate, so an overall {@code UP} also says
+	 * H2 was reachable rather than merely configured.
+	 */
 	@Test
 	@DisplayName("the health endpoint reports UP")
 	void healthEndpointReportsUp() {
@@ -21,21 +25,17 @@ class ApplicationBootsTest extends BootedApplicationTest {
 				.expectStatus().isOk()
 				.expectBody()
 				.jsonPath("$.status").isEqualTo("UP")
-				// The datasource is part of the health aggregate, so an UP overall status
-				// also says H2 was reachable rather than merely configured.
 				.jsonPath("$.components.db.status").isEqualTo("UP");
 	}
 
+	/**
+	 * Asks the running container what kind of thread served the request, rather than
+	 * asserting {@code spring.threads.virtual.enabled} is set, which would only restate
+	 * the configuration file. Flipping the property off fails this test.
+	 */
 	@Test
 	@DisplayName("requests are served on virtual threads")
 	void servesRequestsOnVirtualThreads() {
-		// `spring.threads.virtual.enabled=true` is load-bearing rather than a nicety: the
-		// stand-in Exchange Rate provider is a real HTTP endpoint inside this same
-		// application, so serving a transfer means one request thread waits on a second
-		// thread of this same server. Asserting the property is set would only restate
-		// the configuration file; asking the container what it actually did is the claim
-		// worth testing. Flip the property to false and this test fails, which is the
-		// point of writing it this way round.
 		client().get().uri(ThreadProbeController.PATH)
 				.exchange()
 				.expectStatus().isOk()

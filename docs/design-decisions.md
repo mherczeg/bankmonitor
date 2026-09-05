@@ -67,13 +67,55 @@ Implemented with Spring Security rather than a hand-rolled filter, with each
 setting justified rather than arbitrarily disabled: CSRF off (stateless JSON
 API, no cookies), `STATELESS` session policy, CORS enabled (the React dev
 server is a different origin), `permitAll` on `/api/**` — plus the one real
-rule from §13.
+rule from §10.
 
 **Watch out:** Spring Security runs before Spring MVC and intercepts CORS
 preflight `OPTIONS` requests. Needs `.cors(withDefaults())` *and* a
 `CorsConfigurationSource` bean; the MVC-level `@CrossOrigin` annotation alone
 will not work. Symptom is opaque CORS failures in the browser while `curl`
 works.
+
+**Built in ticket 04, deny-by-default rather than permit-by-default.**
+`anyRequest().denyAll()`, with `/api/**`, `/actuator/health` and the springdoc
+paths named above it. The permissive version — `anyRequest().permitAll()` — is
+the same thing for today's application and a different thing for tomorrow's:
+under it, ticket 21's `/internal/**` prefix is reachable from the moment the
+controller is written and stays reachable if its rule is ever removed, while
+under this one it is unreachable until an entry exists. Deny-by-default is also
+what makes the permits worth reading, since each one is a path someone chose to
+open. `SecurityChainTest` asserts effects a caller can see — a status code, a
+missing `Set-Cookie` — because a test asserting `csrf().disable()` was called
+would only restate the source file.
+
+A denial's body is currently empty rather than an §18 problem document, which
+does not matter while nothing is denied on purpose. It becomes ticket 21's to
+answer, when `/internal/**` produces the first refusal a caller is meant to
+read.
+
+**Rejected — `WebSecurityCustomizer.ignoring()` on `/api/**`.** It is the total
+bypass §28 uses for the mock provider, and here it would forgo the security
+response headers as well as the authorization rule. A permitted request still
+passes through the chain; an ignored one is not a decision, it is an absence.
+
+**Rejected — leaving `UserDetailsServiceAutoConfiguration` in place.** The
+starter generates an in-memory account with a random password and prints it at
+every startup under a warning to replace the configuration before production.
+Harmless, since nothing authenticates — and precisely the "unfinished, not
+decided" reading this section exists to avoid, printed in the reviewer's console
+at every boot. Excluded on the application class.
+
+**Rejected — omitting CORS on the grounds that §20's dev proxy makes the
+frontend same-origin.** True for proxied calls and false for every other caller:
+Swagger UI, a second frontend origin, any deployment that does not proxy. The
+policy is enumerated rather than wildcarded for the same reason the chain denies
+by default — a wildcard states no intent, so nothing about it can later be read
+as wrong.
+
+The README carries the settings themselves and the two traps they avoid, since
+that is what a maintainer inherits. Both traps fail quietly rather than loudly,
+which is the only reason they are worth a paragraph anywhere: the `ERROR`
+dispatch one returns a plausible wrong status rather than an error, and the
+`Retry-After` one is invisible outside a browser.
 
 ---
 

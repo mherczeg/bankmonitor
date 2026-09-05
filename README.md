@@ -29,7 +29,7 @@ as a second process.
 ./mvnw test
 ```
 
-Expect **17 passing tests** and no Docker daemon involved. The suite runs on an in-memory
+Expect **28 passing tests** and no Docker daemon involved. The suite runs on an in-memory
 H2 database; Testcontainers was rejected precisely so this command works on a clean
 machine.
 
@@ -59,9 +59,9 @@ correct for the current state of the build.
 
 ## What is built so far
 
-Tickets 01–03 of 44: the skeleton, schema management, the package structure the domain
-code will be written into, and the two ecosystem bets that had to be settled first.
-**Both bets won.**
+Tickets 01–04 of 44: the skeleton, schema management, the package structure the domain
+code will be written into, the security chain in front of it, and the two ecosystem bets
+that had to be settled first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` and `Account` are both
    records by design; if Hibernate could not instantiate one through its canonical
@@ -91,6 +91,47 @@ waits on a second thread of the same server. On a bounded pool that can deadlock
 itself; virtual threads are not scarce, which is also why the design declines a circuit
 breaker. `ApplicationBootsTest` asks the running container what kind of thread served the
 request rather than asserting the property is set — flip the flag off and it fails.
+
+## Security: configured, not disabled
+
+**There is no authentication, and that is a decision rather than a gap.** No requirement
+in the task references a caller: transfers move money between bare account IDs and all
+three screens are unscoped, so there is no principal to model and no controller signature
+carries one. What *is* here is a Spring Security filter chain in which every setting is
+one someone can defend.
+
+The chain **denies by default** and names what it opens — the public API under `/api/**`,
+the health endpoint, and the OpenAPI document and its UI. That matters less for today's
+application than for the next one: under a blanket `permitAll`, a new prefix is reachable
+the moment its controller is written, and stays reachable if its rule is later deleted.
+The one real authorization rule — a shared secret on the `/internal/**` endpoint that
+receives Check verdicts — lands with the endpoint it protects, because until then there
+is nothing to protect.
+
+The rest of the chain, and why each is what it is:
+
+| Setting | Why |
+|---|---|
+| CSRF **off** | The API is stateless JSON with no cookie and no `Authorization` header, and the CORS policy sends no credentials. A CSRF token defends ambient authority; there is none here to borrow. |
+| Sessions **stateless** | Nothing is remembered between requests, so a session would be state with no reader. Measured by the absence of a `Set-Cookie`, not by reading the setting back. |
+| CORS **on, for `/api/**` only** | The frontend runs as its own process on its own origin. The mock FX provider is deliberately outside the mapping — it stands in for a third party reached server-to-server. |
+| Origins, methods and headers **enumerated** | `payments.cors.allowed-origins` defaults to the Vite dev server; a deployment serving both from one origin sets its own. Wildcards would make the policy unreadable as a statement of intent. |
+| `Retry-After` **exposed** | Only CORS-safelisted response headers reach cross-origin JavaScript. The error contract puts the retry policy in this header, and without naming it the frontend reads it as absent — in the browser only, while `curl` shows it present. |
+| Credentials **off** | This is what keeps CSRF-off safe: no cookie or credential rides along on a cross-origin call. |
+
+Two traps are worth knowing about, because both fail quietly:
+
+1. **Security runs before Spring MVC and answers the CORS preflight itself.** It needs the
+   CORS entry on the chain *and* a `CorsConfigurationSource` bean; a `@CrossOrigin`
+   annotation on a controller is never reached. The symptom is an opaque browser failure
+   that `curl` cannot reproduce.
+2. **The authorization filter also runs on the `ERROR` dispatch.** With deny-by-default,
+   forgetting to permit it turns every 404 and 405 under a permitted path into an empty
+   403 — a plausible-looking status that hides the real one.
+
+`SecurityChainTest` asserts each of these through a running server, as an effect a caller
+can observe: a status code, a header, a cookie that is not set. A test that asserted the
+configuration methods had been called would only restate the source file.
 
 ## Module boundaries
 

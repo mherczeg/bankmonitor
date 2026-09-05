@@ -36,7 +36,8 @@ the React error handling.
 ## Authentication
 
 **Deferred.** No authentication scheme. Spring Security is wired with an
-explicit, justified stateless filter chain, but every request is permitted.
+explicit, justified stateless filter chain that denies by default and permits
+the public API by name, so nothing a caller reaches needs credentials.
 
 **Why deferred:** nothing in the functional or non-functional requirements
 references a caller — transfers operate on bare account IDs, and all three

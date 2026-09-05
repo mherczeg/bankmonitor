@@ -49,8 +49,8 @@ class OpenApiDocumentSpikeTest extends BootedApplicationTest {
 	/**
 	 * A deliberate keep, not an oversight: no ticket asks for Swagger UI, but the task is
 	 * graded by a person who will want to exercise the API by hand, and the {@code -ui}
-	 * starter supplies it for one dependency and no code. Ticket 04 still has to decide
-	 * what its security chain does with {@code /swagger-ui/**}.
+	 * starter supplies it for one dependency and no code. The security chain permits it by
+	 * name, alongside the document itself.
 	 */
 	@Test
 	@DisplayName("Swagger UI is reachable")

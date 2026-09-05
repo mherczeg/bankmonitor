@@ -35,6 +35,12 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
+		<!-- Owns the filter chain. Present so that "no authentication" is a chain
+		     naming what it opens, rather than an absent dependency (design decision 2). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
 
 		<!-- Serves /v3/api-docs, which ticket 32 turns into the frontend's API types. -->
 		<dependency>

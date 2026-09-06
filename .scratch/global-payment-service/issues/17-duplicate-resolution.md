@@ -33,6 +33,23 @@ failure is recoverable by resubmitting the *same* key.
 
 **Blocked by:** 14, 16
 
+**What ticket 16 left you.** The claim mechanics — `claim`, `reclaimFailed`,
+`markSucceeded`, `markFailed` on `IdempotencyClaims` — plus `IdempotentExecution` itself
+still to declare, and `findByIdempotencyKey`, which is what the table above's first column
+is read through. Three things to know before you start:
+
+- `markSucceeded` belongs **inside** the phase-three transaction; `markFailed` belongs
+  **after** the failing one has ended, not in a `catch` within it. Reasons in
+  [16's design record](../../../docs/design-decisions/16-idempotent-execution.md).
+- `markFailed` throws when the key names no row, and it runs while an exception is already
+  propagating. Report the original and attach this one as suppressed.
+- **The table forecloses one option you may want.** A check constraint ties `response_body`
+  to `SUCCEEDED` in both directions, so a `FAILED` row cannot retain a response. If storing
+  a terminal failure's response body turns out to be the right model — see *Terminal vs
+  retryable transfer failures* in [deferred.md](../../../docs/deferred.md) — relax the
+  constraint in a `V4` migration. Ticket 16 kept it deliberately rather than weakening a
+  currently-true invariant for a caller that did not exist yet.
+
 **Status:** ready-for-agent
 
 - [ ] Repeating a succeeded key and payload returns the original `201` result, not a

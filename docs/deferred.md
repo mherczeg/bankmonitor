@@ -102,6 +102,42 @@ well-formed UUIDs, making a guess a 122-bit problem.
 
 ---
 
+## A claim stranded by a crash is never cleared
+
+**Deferred.** A record reaches `IN_PROGRESS` in its own committed transaction
+and leaves it only by the process that claimed it. If that process dies in
+between — a crash, a kill, a container rescheduled — the row stays
+`IN_PROGRESS`, and §5 answers `IN_PROGRESS` with `409 Conflict`. For that key,
+permanently.
+
+**Why the risk is small.** The claim commits before anything else happens, so a
+stranded row means no funds were reserved and no Transfer exists. Nothing is
+lost and nothing has to be reconciled; the client resubmits under a new
+Idempotency Key and the transfer goes through. What is spent is the key, and
+keys are the client's to generate. §4 originally described this window as "what
+the retry path exists for", which is not true — the retry path is the `FAILED`
+one — and [ticket 16](design-decisions/16-idempotent-execution.md) struck the
+clause.
+
+**Why deferred:** clearing it needs to distinguish "still running" from
+"abandoned", and the only honest way to do that is elapsed time. That means a
+`claimed_at` column and something that sweeps on it — and a sweep interval is a
+guess about the longest legitimate request, which for a design whose second
+phase calls a deliberately unreliable provider is a guess worth making with
+measurements rather than without. The record ships without the column on the
+same principle as `Transfer`'s single timestamp: the ticket that first reads a
+claim's age adds it with a reader to shape it.
+
+**What it would take:** `claimed_at` on `idempotency_records`, a reclaim guarded
+on `status = 'IN_PROGRESS' AND claimed_at < ?` alongside the `FAILED` one — the
+same conditional-update-plus-rows-affected shape, so exactly one sweeper wins —
+and a timeout derived from the FX provider's own. The expiry reaper of §14 is
+the scheduled job it would live in. Note that a sweep that is too eager is worse
+than none: it hands the key to a second caller while the first is still working,
+which is the double-charge the whole mechanism exists to prevent.
+
+---
+
 ## Scoped queries and event streams
 
 **Deferred.** `GET /api/transfers` and `GET /api/accounts` return everything to

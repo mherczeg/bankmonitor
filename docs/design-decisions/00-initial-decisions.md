@@ -99,6 +99,11 @@ Named replacements it holds a place for: pessimistic `SELECT ... FOR UPDATE`
 instead of relying on constraint violation, a Redis-backed store once there is
 more than one instance, or folding into the outbox.
 
+> **[Ticket 16](16-idempotent-execution.md)** built the storage and the claim
+> mechanics underneath this port and deliberately left the port itself to
+> [ticket 17](17-duplicate-resolution.md), which is the first thing with a caller
+> for it.
+
 ---
 
 ## 4. Request handling is three phases
@@ -116,8 +121,14 @@ Phase 3 bundles the status update with the reservation deliberately. If they
 could commit separately, a crash between them leaves funds reserved and the
 record stuck at `IN_PROGRESS` — the client is told `409` forever for a transfer
 that really happened. Bundled, the only crash window is after phase 1: a
-claimed key with nothing reserved, which is a stale row and exactly what the
-retry path exists for.
+claimed key with nothing reserved, ~~which is a stale row and exactly what the
+retry path exists for~~ — a stale row that no retry can clear, because the retry
+path is the `FAILED` one and a crash leaves `IN_PROGRESS`.
+
+> **[Ticket 16](16-idempotent-execution.md)** struck that clause and has the
+> evidence, along with the propagation this section implies for the `SUCCEEDED`
+> flip without naming it. The unrecoverable stale row is in
+> [deferred.md](../deferred.md).
 
 ---
 
@@ -154,6 +165,11 @@ The payload-mismatch case shares `409` with the in-progress case but carries a
 distinct problem `type` URN (`urn:problem:request-in-progress` vs
 `urn:problem:idempotency-key-reused`, see §18), because a client may retry the
 first and must never retry the second.
+
+> **[Ticket 16](16-idempotent-execution.md)** built both traps — the conditional
+> update and the new transaction — and found that the second one has a lock cost
+> this section does not mention: `markFailed` has to be called *after* the failing
+> transaction, not from inside it.
 
 ---
 
@@ -960,6 +976,9 @@ suite too.
 > the last paragraph asks for, and both halves of the assertion that holds it there.
 > **[Ticket 11](11-transfer-entity.md)** found that `in (…)` in a `check`
 > constraint is broken on H2 in a way every startup gate passes.
+> **[Ticket 16](16-idempotent-execution.md)** wrote the third migration under
+> ticket 11's finding, and restated `validate` inside its own test because the
+> migration is half of every assertion there.
 
 ---
 
@@ -1023,6 +1042,11 @@ package-private; the **`@Transactional` method** stays public.
 > and is the first to depend on the `repository package-private` clause meaning
 > something: `transfers` cannot reach a balance except through the operation that
 > locks it. Still no port.
+> **[Ticket 16](16-idempotent-execution.md)** amends the `idempotency/` line: the
+> slice ships the storage under the port and not the port itself, and the
+> implementation is JPA rather than the JDBC the tree names, on `accounts` and
+> `transfers`' precedent. Nothing in the package is public, so the line's
+> `IdempotentExecution (public)` is what ticket 17 makes true.
 
 ---
 

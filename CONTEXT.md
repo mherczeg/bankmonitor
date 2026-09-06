@@ -72,6 +72,13 @@ _Avoid_: Rate, FX rate
 A client-supplied value (sent as `X-Idempotency-Key`) that identifies a single Transfer *intent*, so that retrying the same request never moves money twice. It identifies what the user meant to do, not an individual HTTP attempt.
 _Avoid_: Request ID, dedup key
 
+**Claim**:
+The hold one request has on an Idempotency Key while the work behind that key is
+its to do. A Claim is in progress, or succeeded and holding the response every
+repeat of the key is owed, or failed — and a failed one can be *reclaimed*, by
+exactly one of the retries that want it.
+_Avoid_: Lock, lease, reservation
+
 **Outbox Event**:
 A record that something happened to a Transfer, written as part of the same change that caused it and delivered to other services afterwards. Its existence is guaranteed by the change it describes.
 _Avoid_: Message, Notification, Domain event

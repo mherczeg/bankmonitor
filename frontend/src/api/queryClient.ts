@@ -17,5 +17,14 @@ export const queryClient = new QueryClient({
       // No `staleTime` on purpose — any non-zero value silently defeats the line above,
       // since a focus only refetches what is already stale.
     },
+
+    mutations: {
+      // Declared for the reason above it is declared: the value happens to be the default,
+      // and it is a designed property rather than one to inherit. A mutation here is a
+      // `POST` that opens an Account or requests a Transfer, and only the Transfer carries
+      // an Idempotency Key — so a silent re-send of the other one opens a second Account
+      // nobody asked for. See docs/design-decisions/39-create-account-form.md.
+      retry: false,
+    },
   },
 })

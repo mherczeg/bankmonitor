@@ -14,11 +14,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-form": "^1.33.5",
     "@tanstack/react-query": "^5.102.8",
     "@tanstack/react-router": "^1.170.32",
     "bootstrap": "^5.3.8",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

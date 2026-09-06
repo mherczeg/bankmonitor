@@ -73,11 +73,22 @@ describe('parsing what an operator typed', () => {
     }
   })
 
-  it('refuses the two amounts that are not a transferable sum', () => {
-    expect(rejects('0', 'HUF')).toBe('not-positive')
-    expect(rejects('0.00', 'EUR')).toBe('not-positive')
-    expect(rejects('-1', 'HUF')).toBe('not-positive')
-    expect(rejects('-100.50', 'EUR')).toBe('not-positive')
+  it('refuses a negative amount, however it is spelled', () => {
+    expect(rejects('-1', 'HUF')).toBe('negative')
+    expect(rejects('-100.50', 'EUR')).toBe('negative')
+    expect(rejects('-0', 'HUF')).toBe('negative')
+    expect(rejects('-0.00', 'EUR')).toBe('negative')
+  })
+
+  /**
+   * Zero is an amount, and whether it is a *usable* one is the asking form's rule rather
+   * than this module's: ticket 09 opens an Account with nothing in it deliberately, while
+   * a Transfer of nothing is refused by the form that requests one.
+   */
+  it('reads zero as the amount it is, leaving what it means to the form asking', () => {
+    expect(parseAmount('0', 'HUF')).toEqual({ ok: true, minorUnits: 0 })
+    expect(parseAmount('0.00', 'EUR')).toEqual({ ok: true, minorUnits: 0 })
+    expect(parseAmount('0.0', 'USD')).toEqual({ ok: true, minorUnits: 0 })
   })
 
   it('refuses an amount too large to count exactly', () => {
@@ -92,7 +103,7 @@ describe('parsing what an operator typed', () => {
 })
 
 describe('formatting and parsing as inverses', () => {
-  const amounts = [1, 5, 50, 99, 100, 101, 999, 1_000, 10_050, 123_456_789]
+  const amounts = [0, 1, 5, 50, 99, 100, 101, 999, 1_000, 10_050, 123_456_789]
 
   for (const currency of CURRENCIES) {
     it(`round-trips every ${currency} amount losslessly`, () => {

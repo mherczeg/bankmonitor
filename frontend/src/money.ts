@@ -34,7 +34,7 @@ export const CURRENCIES = Object.keys(DECIMAL_PLACES) as readonly Currency[]
 export const decimalPlacesIn = (currency: Currency): number => DECIMAL_PLACES[currency]
 
 /** Why a typed amount could not be read as a count of Minor Units. */
-export type AmountRejection = 'not-a-number' | 'too-many-decimals' | 'not-positive' | 'too-large'
+export type AmountRejection = 'not-a-number' | 'too-many-decimals' | 'negative' | 'too-large'
 
 /** The outcome of reading operator input, which is either an amount or a reason it is not one. */
 export type ParsedAmount =
@@ -69,9 +69,11 @@ const DECIMAL_FORM = /^(-?)(\d+)(?:\.(\d+))?$/
  * Reads what an operator typed as a count of Minor Units in the given Currency, or
  * says which of four things is wrong with it.
  *
- * Only a positive amount is one, since this parses a sum to transfer or to open an
- * Account with. {@link formatAmount}'s output therefore reads back through here for
- * positive counts only, which is the one place the two are not inverses.
+ * Zero parses. Whether zero is a *usable* amount is the asking form's rule and not
+ * this module's — an Account may be opened with nothing in it, and a Transfer of
+ * nothing may not — so a form that needs a sum greater than zero says so itself. What
+ * is refused here is a negative, which no form has a use for. {@link formatAmount}'s
+ * output therefore reads back through here for every non-negative count.
  *
  * The checks run in the order the string is taken apart — shape, then scale, then
  * value. The scale check has to stay ahead of the conversion, which would otherwise
@@ -89,7 +91,7 @@ export const parseAmount = (input: string, currency: Currency): ParsedAmount => 
 
   const minorUnits = Number(`${whole}${fraction.padEnd(places, '0')}`)
 
-  if (sign === '-' || minorUnits === 0) return { ok: false, reason: 'not-positive' }
+  if (sign === '-') return { ok: false, reason: 'negative' }
   if (!Number.isSafeInteger(minorUnits)) return { ok: false, reason: 'too-large' }
 
   return { ok: true, minorUnits }

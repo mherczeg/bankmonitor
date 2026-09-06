@@ -60,6 +60,16 @@ export type ScriptedApi = {
    */
   accounts: (accounts: readonly Account[]) => void
 
+  /**
+   * What `POST /api/accounts` answers with — the Account the service opened, as a `201`.
+   *
+   * The list it joins is scripted separately, on purpose: the screen learns about the new
+   * Account by refetching, so a spec that wants to see the row appear scripts
+   * {@link ScriptedApi.accounts} again after this. Answering both from one call would
+   * hide the invalidation the screen depends on.
+   */
+  opensAccount: (account: Account) => void
+
   /** What `GET /api/transfers` answers with — the Transactions list. */
   transfers: (transfers: readonly Transfer[]) => void
 
@@ -82,11 +92,22 @@ export type ScriptedApi = {
    * that a re-render came from a refetch rather than from something the page did anyway.
    */
   timesAsked: (method: HttpMethod, path: ApiPath, params?: PathParams) => number
+
+  /**
+   * The body of the last request the browser sent to a path, parsed.
+   *
+   * It is what a form's conversion is asserted through: an amount is only a Minor Unit
+   * count once it has left the browser as one, and a screen rendering `100.50` correctly
+   * proves nothing about the `10050` it was supposed to send. `undefined` where the path
+   * has not been asked for, or where the request carried no body.
+   */
+  bodySent: (method: HttpMethod, path: ApiPath, params?: PathParams) => unknown
 }
 
 export const scriptApi = async (page: Page): Promise<ScriptedApi> => {
   const answers = new Map<string, Answer>()
   const asked = new Map<string, number>()
+  const sent = new Map<string, unknown>()
 
   await page.route(anApiRequest, async (route) => {
     const request = route.request()
@@ -94,18 +115,21 @@ export const scriptApi = async (page: Page): Promise<ScriptedApi> => {
     const asking = requestFor(request.method(), path)
 
     asked.set(asking, (asked.get(asking) ?? 0) + 1)
+    sent.set(asking, request.postDataJSON())
 
     await route.fulfill(answers.get(asking) ?? unscripted(request.method(), path))
   })
 
   return {
     accounts: (accounts) => answers.set(requestFor('GET', ACCOUNTS), succeeds(accounts)),
+    opensAccount: (account) => answers.set(requestFor('POST', ACCOUNTS), created(account)),
     transfers: (transfers) => answers.set(requestFor('GET', TRANSFERS), succeeds(transfers)),
     transfer: (transfer) =>
       answers.set(requestFor('GET', urlFor(TRANSFER, { id: transfer.id })), succeeds(transfer)),
     refuses: (method, path, problem, params) =>
       answers.set(requestFor(method, urlFor(path, params)), fails(problem)),
     timesAsked: (method, path, params) => asked.get(requestFor(method, urlFor(path, params))) ?? 0,
+    bodySent: (method, path, params) => sent.get(requestFor(method, urlFor(path, params))),
   }
 }
 
@@ -131,6 +155,9 @@ const succeeds = (body: unknown): Answer => ({
   contentType: 'application/json',
   body: JSON.stringify(body),
 })
+
+/** The `201` the API answers a `POST` that made something with. */
+const created = (body: unknown): Answer => ({ ...succeeds(body), status: 201 })
 
 const fails = (problem: ProblemDocument): Answer => ({
   status: problem.status,

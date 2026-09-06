@@ -15,6 +15,11 @@ The details that make this screen the interesting one:
   wiring.
 - **A Transfer from an Account to itself is refused in the browser** — a cross-field rule,
   so it lives in the form-level validator rather than on either field.
+- **An amount of zero is refused in the browser, and this form owns that rule.** Ticket 39
+  moved it out of `parseAmount`, which now reads zero as the amount it is — an Account may
+  be opened with nothing in it, and a Transfer of nothing may not. Nothing in the frontend
+  enforces it until this ticket does; the backend refuses it with a `422` in the meantime.
+  See `docs/design-decisions/39-create-account-form.md`.
 - **The Idempotency Key comes from the lifecycle module** (ticket 35): `startIntent()` once
   when the form becomes ready, `keyFor(payload)` on every attempt, `succeeded()` when the
   Transfer is accepted. It must not be minted inside the request. Ticket 35 keys on the
@@ -42,6 +47,7 @@ Carries its own browser spec.
 - [ ] The amount field shows the source Account's Currency as an adornment
 - [ ] Switching the source Account re-validates the entered amount immediately
 - [ ] A self-Transfer is refused without a request being sent
+- [ ] An amount of zero is refused without a request being sent
 - [ ] An insufficient Available Balance is reported readably
 - [ ] Submitting navigates to the Transfer's page
 - [ ] The Idempotency Key is stable across retries of one intent, and resets on a success or

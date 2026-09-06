@@ -58,11 +58,15 @@ src/
   main.tsx            mounts the router inside the query client, imports Bootstrap once
   routeTree.gen.ts    generated — see below
   money.ts            the decimal form of an amount, in and out — see below
+  accountSchema.ts    the rules the new-Account form is judged by, and the one place
+                      a typed decimal becomes a Minor Unit count
   api/                the API's types, the query client, its retry rule, how a failure
-                      reads to an operator, where Idempotency Keys come from, the
-                      names cached answers are filed under, and what a stream
-                      message invalidates
-  routes/             one file per route; the file tree is the URL tree
+                      reads to an operator and which of its fields were refused, where
+                      Idempotency Keys come from, the names cached answers are filed
+                      under, and what a stream message invalidates
+  routes/             one file per route; the file tree is the URL tree. A file whose
+                      name starts with `-` is not a route — it is a component sitting
+                      next to the route that uses it
 ```
 
 **Routing is file-based, with typed routes.** A path is not a string the compiler will
@@ -78,6 +82,21 @@ so it reads as output rather than as something anyone edited by hand.
 **The query client owns all server state**, and it is the only thing that does — there is
 no Redux, Zustand or Jotai here, because once the query cache holds server state and the
 URL holds route state there is nothing left for one to manage.
+
+**Forms are TanStack Form validated by a zod schema**, and the schema lives in its own
+module rather than beside the markup — `accountSchema.ts` is the first. What that buys is
+that a form's rules are testable without rendering a form, which is the same rule the rest
+of the frontend is built on. The one wrinkle worth knowing before writing the second form:
+**a zod transform does not reach the form.** TanStack validates through Standard Schema,
+which reports issues and discards the parsed value, so a submit handler is given what was
+typed and calls `schema.parse(value)` itself to get the converted shape. And the schema is
+registered under `onChange` only — TanStack runs the change validator on submit too, so
+registering it under `onSubmit` as well puts every message under its field twice.
+
+**Mutations are never retried**, which is written out in `src/api/queryClient.ts` for the
+same reason: a mutation here is a `POST` that opens an Account or requests a Transfer, and
+only the Transfer carries an Idempotency Key. A silent re-send of the other one would open
+a second Account, and nothing on the wire could tell the backend it was the same request.
 
 Its retry rule is narrowed to `5xx` (`src/api/retry.ts`). The default retries anything,
 which is wrong twice over: a `422` is the server's considered answer and asking again
@@ -116,8 +135,13 @@ that multiplies or divides by a hundred. Its surface:
 | `CURRENCIES` | the three, at runtime — the `Currency` type is generated and compile-time only |
 | `ParsedAmount`, `AmountRejection` | the parse result, and the four names a refusal can carry |
 
-**The two functions are exact inverses over every amount that is valid to submit,
-and that is a requirement rather than a coincidence.** A formatted amount is not only
+Turning a typed decimal into a Minor Unit count is `accountSchema.ts`'s job on the
+create-Account form, and `parseAmount` is how it does it. **No React module in this app
+multiplies by a hundred** — the form does not import `decimalPlacesIn` and would not know
+what to do with it.
+
+**The two functions are exact inverses over every non-negative amount, and that is a
+requirement rather than a coincidence.** A formatted amount is not only
 read: it goes into a form field an operator then edits, on the create-Account and
 transfer screens both. So the output
 carries no currency symbol, no thousands separator and no locale — just the digits and,
@@ -131,15 +155,20 @@ because `Number('100.50') * 100` is `10049.999999999998` and the rounding step t
 fixes it is a rounding step in the module whose contract is that it does not round.
 
 **A refusal says which of four things is wrong** — `not-a-number`, `too-many-decimals`,
-`not-positive`, `too-large` — so a form can tell an operator what to fix rather than
-that something is wrong. Scientific notation, a comma decimal separator and a thousands
-separator are all refused rather than guessed at, and so are zero and negatives —
-which is the one asymmetry between the two functions: `formatAmount` renders a zero
-balance and would render a negative difference, and neither is a sum anyone can send,
-so neither reads back. `too-large` is the one refusal that is not
-about the operator: a JavaScript number counts exactly only to 2^53 − 1 where the
-backend's `long` goes far further, and an amount past that bound would arrive at the
-server as a different number than the one submitted.
+`negative`, `too-large` — so a form can tell an operator what to fix rather than that
+something is wrong. Scientific notation, a comma decimal separator and a thousands
+separator are all refused rather than guessed at, and so is a negative. `too-large` is the
+one refusal that is not about the operator: a JavaScript number counts exactly only to
+2^53 − 1 where the backend's `long` goes far further, and an amount past that bound would
+arrive at the server as a different number than the one submitted.
+
+**Zero parses, and what it *means* is the asking form's rule rather than this module's.**
+An Account may be opened with nothing in it — the API allows it deliberately — and a
+Transfer of nothing may not, so the two forms answer differently and neither answer belongs
+in a module that reads digits. The wording of a refusal is the form's too: this module
+exports `decimalPlacesIn` so a form can write its own sentence from the same source of
+truth, rather than returning UI copy from the one module that must import nothing from
+React.
 
 Adding a Currency is therefore a one-line change in this file, and the compiler finds
 it: the decimals table is keyed by the generated `Currency` type, so a fourth Currency
@@ -178,6 +207,27 @@ document's `title` is the status reason phrase (`"Conflict"`) and its `detail` i
 sentence for whoever is reading the response (`"Invalid request content."`); neither is
 advice an operator can act on. The one server-supplied member the screens do use is
 `errors`, and it goes against the fields it names rather than into a paragraph.
+
+`src/api/validation.ts` is the module that reads it:
+
+```ts
+rejectedFieldsIn(failure): { byField, overall }
+```
+
+It answers the other half of the same failure — the URN chooses the heading, and this
+chooses what appears under each input — and it is a **separate module on purpose**. It
+reads neither the URN nor the response code, enforced the way `problem.ts`'s rule is
+enforced, by a test that reads its own subject's source. The plausible edit that forbids is
+*"only show field detail when the URN is `validation-failed`"*, which would throw away
+detail the backend chose to send with some other refusal.
+
+**The messages under a field are the service's own words, verbatim**, which is the one
+place this app does not do its own wording. A URN names a situation there are fourteen of
+and this app can have an opinion about; a field message names a constraint, and rewording
+it here would mean keeping a copy of every constraint the backend declares — one that
+drifts the first time a `@Min` changes. Anything a refusal names that a form has no field
+for, including the contract's `field: null`, is listed under the heading rather than
+dropped.
 
 **The argument is `unknown`, on purpose.** A parsed response body is not a
 `ProblemDocument` until something has checked, and typing the parameter would push a
@@ -366,6 +416,39 @@ an `Error` would hide both behind a message.
 A row links nowhere. There is no `GET /api/accounts/{id}` to link to, and the endpoint and
 the `Location` header that would name it are deferred together in `../docs/deferred.md`.
 
+### Opening an Account
+
+Above the list, `src/routes/-newAccountForm.tsx` is the other half of the screen: a
+Currency, an opening balance in the decimal form that Currency is written in, and a button.
+Everything it is judged by lives in `src/accountSchema.ts`, including the conversion — the
+component's only contact with the amount is the `newAccountSchema.parse(value)` in its
+submit handler, which is where the transform that validation discarded is asked for.
+
+**The decimal rule follows the chosen Currency, so it is a cross-field rule.** `100.50` is
+an amount in EUR and is fillér that do not exist in HUF, so the check sits on the object
+rather than on the amount and names `openingBalance` in its issue path — which is what puts
+the sentence under the input rather than above the form. Because an object-level validator
+re-runs on any field change, switching HUF to EUR makes an untouched `100.50` stop being a
+refusal with no dependency wiring anywhere. The Currency appears twice on the form for the
+same reason: once in the `<select>` that chooses it, and again as an adornment on the amount
+input, so the rule and the denomination it comes from are in one glance.
+
+**A server-side refusal is shown per field.** `problemToMessage` writes the heading, and
+`rejectedFieldsIn` puts the service's own sentence under each input it named —
+`openingBalanceMinorUnits` walked back to the `openingBalance` field the operator can
+actually correct. Those messages are derived from the failed mutation rather than written
+into the form's error state, so editing anything clears them along with the *Account N is
+open* note: both are verdicts on a payload that has just changed, and a refusal of an amount
+no longer in the box is worse than no refusal at all.
+
+**The submit button is disabled only while a request is in flight**, never for the form
+being invalid. Pressing it on an untouched form runs every rule at once and puts a sentence
+under each field that failed, which is a click spent on an answer; a button greyed out until
+valid says that something is wrong and never which thing.
+
+On success the form invalidates `queryKeys.accounts()`, so **the new row arrives from the
+endpoint** rather than from anything the form knew about the Account it just asked for.
+
 ## The API types, and when to regenerate them
 
 **Nothing here describes the API by hand.** `src/api/schema.gen.ts` is generated from the
@@ -440,10 +523,16 @@ test('the balance comes from the API', async ({ api, page }) => {
 | Call | What it scripts |
 |---|---|
 | `api.accounts(accounts)` | what `GET /api/accounts` answers with, from the next request on |
+| `api.opensAccount(account)` | what `POST /api/accounts` answers with, as a `201` |
 | `api.transfers(transfers)` | what `GET /api/transfers` answers with |
 | `api.transfer(transfer)` | what `GET /api/transfers/{id}` answers with, at the ID the Transfer carries |
 | `api.refuses(method, path, problem, params?)` | a refusal instead of a success; the document carries its own status |
 | `api.timesAsked(method, path, params?)` | how many times the browser has asked, since the spec began |
+| `api.bodySent(method, path, params?)` | the parsed body of the last request the browser sent there |
+
+`api.bodySent` is what a form's conversion is asserted through, and it is the only thing
+that can be: a screen rendering `100.50` correctly says nothing about whether `100.50` or
+`10050` left the browser, and only the second is what the backend's `long` counts.
 
 **Calling one of these again replaces the answer** rather than adding a second route, which
 is how a spec makes truth change mid-test. A path a spec never scripts answers `404` with a

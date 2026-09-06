@@ -761,6 +761,10 @@ Sources: `tanstack.com/form/latest/docs/framework/react/guides/validation` and
 > **The server side of that payload is [ticket 14](14-request-transfer-endpoint.md)**, which
 > keeps `fromAccountId` / `toAccountId` on the wire against the domain's own *source* and
 > *destination*, and spells the amount `amountMinorUnits`.
+> **[Ticket 39](39-create-account-form.md)** is the first form, and the transform finding
+> above cost it exactly the one line predicted. It needs no factory — its Currency is a
+> field — and it found that registering the schema under `onSubmit` *as well as* `onChange`
+> prints every message twice, because the change validator already runs on submit.
 
 ---
 
@@ -792,6 +796,10 @@ README justification.
 > **[Ticket 38](38-accounts-list-screen.md)** spends the table from the vocabulary above
 > and rejects a card per Account — five aligned figures a row is what a table is for —
 > and opens the second CSS Module for the one rule that keeps the digits lined up.
+> **[Ticket 39](39-create-account-form.md)** spends the `<select>` and the form, and finds
+> that `.is-invalid` / `.invalid-feedback` do map onto the error state as promised — with
+> one wrinkle, that a feedback element inside an `.input-group` needs `has-validation` on
+> the group to show at all.
 
 ---
 
@@ -868,6 +876,10 @@ render — deterministically, with no `waitForTimeout`. True E2E goes to
 > scripted answers in one mutable table behind one route handler rather than
 > re-registering a route per answer as step 2 above reads. It also names the glob that
 > swallows the app's own `src/api/` modules, reproduced rather than reasoned about.
+> **[Ticket 39](39-create-account-form.md)** adds `accountSchema.ts` to the extraction
+> list above — the transfer schema's sibling, arriving first — and gives the harness the
+> two calls a form needs: an answer for a `POST`, and the body the browser actually sent,
+> which is the only place a decimal → Minor Unit conversion can be caught getting it wrong.
 > **[Ticket 38](38-accounts-list-screen.md)** is the first screen to carry its own spec,
 > and found that "real focus and blur" is not free in a headless browser: Chromium removed
 > `Emulation.setPageVisibilityState`, so the harness redefines `document.visibilityState`

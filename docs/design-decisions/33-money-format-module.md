@@ -62,7 +62,9 @@ leaves a rounding rule in the code for someone to change.
 ## Rejection is a reason code, not a message and not an exception
 
 `parseAmount` returns `{ ok: true, minorUnits }` or `{ ok: false, reason }`, over four
-reasons: `not-a-number`, `too-many-decimals`, `not-positive`, `too-large`.
+reasons: `not-a-number`, `too-many-decimals`, `not-positive`, `too-large`. (The third is
+now spelled `negative` — [ticket 39](39-create-account-form.md), and the paragraph below
+on zero has the reason.)
 
 **Rejected — returning `null` or `NaN` for bad input.** The four reasons are four
 different things to tell an operator, and a single failure value throws that away at
@@ -78,6 +80,11 @@ here means the module that must import nothing from React is the module that dec
 how errors read. `decimalPlacesIn` is exported instead, so a form can write its own
 sentence from the same source of truth.
 
+> **[Ticket 39](39-create-account-form.md)** is the first form to write one, and it does
+> exactly that: `accountSchema.ts` turns each reason into a sentence, and takes the example
+> amount in it from `formatAmount` so the shape it asks for cannot drift from the shape it
+> accepts.
+
 **The checks run in the order the string is taken apart** — shape, then scale, then
 value — so `100.505` in EUR is *too many decimals* rather than *not a number*. This is
 not only a nicety: the scale check has to precede the conversion, because padding a
@@ -91,6 +98,14 @@ refusal. Format's domain is every count the API can report; parse's is the sums 
 operator can submit, which is strictly narrower. The round-trip property is therefore
 over positive counts, which is where it is needed — the only round trip that happens
 in the app is a form field being pre-filled and submitted.
+
+> **Corrected by [ticket 39](39-create-account-form.md).** Zero *is* a sum an operator can
+> submit — [ticket 09](09-create-account-endpoint.md) opens an Account with nothing in it
+> on purpose — so this paragraph describes a refusal the first form would have inherited
+> and the API does not make. `parseAmount` now refuses only a negative, `not-positive` is
+> renamed `negative`, and whether zero is *usable* is the asking form's rule. The round
+> trip is lossless over every non-negative count, so there is no longer a place where the
+> two are not inverses. Ticket 40 owns the "more than zero" rule for a Transfer.
 
 ## `too-large` exists because a JavaScript number is not a `long`
 

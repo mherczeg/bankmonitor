@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { NewAccountForm } from './-newAccountForm'
 import { listAccounts } from '../api/accounts'
 import { problemToMessage } from '../api/problem'
 import { queryKeys } from '../api/queryKeys'
@@ -19,6 +20,9 @@ export const Route = createFileRoute('/accounts')({ component: AccountsScreen })
  * endpoint sent, which is oldest Account first and part of its contract.
  *
  * Nothing here links anywhere — there is no per-Account endpoint behind a row.
+ *
+ * The form above the list opens an Account and invalidates this query, so the row it
+ * created arrives from the endpoint rather than from anything the form knew.
  */
 function AccountsScreen() {
   const accounts = useQuery({ queryKey: queryKeys.accounts(), queryFn: listAccounts })
@@ -27,6 +31,8 @@ function AccountsScreen() {
     <>
       <h1 className="h3">Accounts</h1>
       <p className="text-body-secondary">Every account, its balance and what it can spend.</p>
+
+      <NewAccountForm />
 
       {accounts.isPending && <LoadingAccounts />}
       {accounts.isError && <FailedToLoad failure={accounts.error} onRetry={() => void accounts.refetch()} />}

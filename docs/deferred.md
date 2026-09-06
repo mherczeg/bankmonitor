@@ -20,7 +20,10 @@ them oppositely:
 
 MVP returns `409` for both, with a distinct problem `type` URN so the two are
 at least distinguishable programmatically, and `Retry-After` present on the
-in-progress case only.
+in-progress case only. **Both are real as of
+[ticket 17](design-decisions/17-duplicate-resolution.md)** — raised by the
+idempotency port and answered by `TransferController`, where they had until then
+existed only as a probe fixture asserting the shape.
 
 **Why deferred:** the remaining work is largely a UX and client-contract
 problem — how the frontend surfaces each case, whether it retries
@@ -39,6 +42,12 @@ will be. What is still deferred is the *automatic* half — nothing reads
 `409` precisely so that it does not race a header it ignores. A client that
 backs off on the header, and only for the in-progress URN, is the remaining
 work.
+
+**Ticket 17 shipped `409` for both**, which its own table required, so the
+status-code half of *What it would take* is untouched rather than settled. §18
+makes the `type` URN and the presence of `Retry-After` what separates the two
+today; whether the payload-mismatch case eventually earns `422` is still open,
+and belongs with the client retry policy it would be decided alongside.
 
 ---
 
@@ -238,7 +247,14 @@ client wants.
 rejections (insufficient funds, unknown account) from unavailability (FX
 provider down), with rejections stored and replayed like successes rather than
 re-executed. This is what Stripe does — the key records an *outcome*, not just
-a success.
+a success. It also takes a `V4` migration relaxing
+`idempotency_records_response_only_when_succeeded`, which ties a stored response
+to `SUCCEEDED` in both directions: a `FAILED` row cannot keep one today.
+[Ticket 16](design-decisions/16-idempotent-execution.md) named that constraint as
+ticket 17's to reconsider, and
+[ticket 17](design-decisions/17-duplicate-resolution.md) left it standing — the
+biconditional is true of the design as it stands, and this entry is the ticket
+that would make it false.
 
 ---
 

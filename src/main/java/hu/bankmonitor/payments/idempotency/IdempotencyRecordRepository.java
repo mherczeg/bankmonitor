@@ -4,15 +4,16 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 
+import java.util.Optional;
+
 /**
  * Persistence for {@link IdempotencyRecord}, package-private so that reaching it from
  * another slice does not compile (design decision 30).
  *
  * <p>The bare {@link Repository} marker rather than {@code JpaRepository}, on
  * {@link hu.bankmonitor.payments.accounts.Account}'s precedent: every method here has a
- * call site in {@link IdempotencyClaims} today. The lookup that reads a row after the
- * constraint has refused an insert arrives with ticket 17, which is the first thing that
- * has a question to ask of it.
+ * call site today. {@link #findByIdempotencyKey} is ticket 17's, and is the only read in
+ * the interface — everything else decides in the database rather than in memory.
  *
  * <p>Every transition is written as an update guarded on the status it is leaving, rather
  * than by loading the record and setting a field. A read-modify-write would decide the
@@ -23,6 +24,23 @@ interface IdempotencyRecordRepository extends Repository<IdempotencyRecord, Long
 
 	/** Claims a key, which is how a record comes to exist. The unique constraint is the test. */
 	IdempotencyRecord save(IdempotencyRecord record);
+
+	/**
+	 * Reads the claim that beat a duplicate to the key, which is the one place the four
+	 * answers of design decision 5 can be told apart.
+	 *
+	 * <p>A read where every other method here is a guarded write, and it is safe to be one:
+	 * it runs only after the constraint has already refused an insert, so the row it finds
+	 * is somebody else's committed claim rather than a value this caller is about to act on
+	 * as though nothing else could change it. What it decides — replay, refuse, or reclaim —
+	 * is then re-decided in the database by {@link #reclaimFailed} for the one branch where
+	 * two callers can both arrive.
+	 *
+	 * <p>Empty means the violation came from some other constraint on the row, which is how
+	 * {@code ClaimedExecution} tells a duplicate key apart from any other rejected insert
+	 * without matching on a constraint name.
+	 */
+	Optional<IdempotencyRecord> findByIdempotencyKey(String idempotencyKey);
 
 	/**
 	 * Takes a failed key back to {@code IN_PROGRESS}, and reports whether this caller was

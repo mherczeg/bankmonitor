@@ -103,6 +103,9 @@ more than one instance, or folding into the outbox.
 > mechanics underneath this port and deliberately left the port itself to
 > [ticket 17](17-duplicate-resolution.md), which is the first thing with a caller
 > for it.
+> **[Ticket 17](17-duplicate-resolution.md)** built the port, and it takes a
+> fourth parameter the sketch above does not: a replay is read back out of a
+> database column, and erasure means `T` cannot say what to read it back as.
 
 ---
 
@@ -129,6 +132,10 @@ path is the `FAILED` one and a crash leaves `IN_PROGRESS`.
 > evidence, along with the propagation this section implies for the `SUCCEEDED`
 > flip without naming it. The unrecoverable stale row is in
 > [deferred.md](../deferred.md).
+> **[Ticket 17](17-duplicate-resolution.md)** put the three phases in an order,
+> and ships with **phase 2 absent** rather than guessed at: `executeOnce` opens
+> the phase-3 transaction, so there is nowhere in the port to run an FX call
+> outside it, and ticket 26 is the first caller that has one.
 
 > **Phase 3 is built in [ticket 13](13-reserve-funds.md)** and reached over HTTP in
 > **[ticket 14](14-request-transfer-endpoint.md)**, whose transaction is the one ticket 16
@@ -177,6 +184,10 @@ first and must never retry the second.
 > update and the new transaction — and found that the second one has a lock cost
 > this section does not mention: `markFailed` has to be called *after* the failing
 > transaction, not from inside it.
+> **[Ticket 17](17-duplicate-resolution.md)** built this table, and settled what
+> the payload hash is taken over — the *parsed* request, so that whitespace is not
+> a payload difference — and why an absent row rethrows the constraint violation
+> instead of being read as this key's.
 > **[Ticket 35](35-idempotency-key-module.md)** made the payload-mismatch row
 > unreachable from the frontend rather than merely handled, by keying the client's
 > Idempotency Key on the payload too.
@@ -556,6 +567,9 @@ distinguished by their `type` URN (`urn:problem:request-in-progress` vs
 
 > **Built in [ticket 05](05-problem-detail-contract.md)**, with five things the
 > ticket did not ask for and that the implementation needed anyway.
+> **[Ticket 17](17-duplicate-resolution.md)** is where the two `409`s stop being
+> a fixture and become real, and it chooses the value this section leaves open:
+> `Retry-After: 1`.
 > **[Ticket 09](09-create-account-endpoint.md)** widens that ticket's rule: a
 > body Jackson rejected *at a member* is a validation failure with an `errors`
 > entry, not `urn:problem:malformed-request`.

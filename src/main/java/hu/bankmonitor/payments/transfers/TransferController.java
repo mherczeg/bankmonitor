@@ -4,10 +4,14 @@ import hu.bankmonitor.payments.accounts.InsufficientFundsException;
 import hu.bankmonitor.payments.accounts.UnknownAccountException;
 import hu.bankmonitor.payments.common.Money;
 import hu.bankmonitor.payments.common.ProblemType;
+import hu.bankmonitor.payments.idempotency.IdempotencyKeyReusedException;
+import hu.bankmonitor.payments.idempotency.IdempotentExecution;
+import hu.bankmonitor.payments.idempotency.RequestInProgressException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.hibernate.validator.constraints.UUID;
 import org.jspecify.annotations.Nullable;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -74,15 +78,33 @@ class TransferController {
 
 	private static final String UNKNOWN_TRANSFER_DETAIL = "No Transfer has that identifier.";
 
+	private static final String REQUEST_IN_PROGRESS_DETAIL =
+			"A request with this Idempotency Key is still being processed. Retry with the same key.";
+
+	private static final String IDEMPOTENCY_KEY_REUSED_DETAIL =
+			"This Idempotency Key already stands for a different Transfer. Use a new key.";
+
+	/**
+	 * Seconds, and one of them: the work a client is waiting on here is a single database
+	 * transaction, so anything longer would be telling a client to sit out an operation that
+	 * has already finished. Nothing in the design fixes a value, and this is the honest
+	 * reading of what the operation costs rather than a policy.
+	 */
+	private static final String RETRY_AFTER_SECONDS = "1";
+
 	private final FundsReservation reservation;
 
 	private final TransferLookup transfers;
 
+	private final IdempotentExecution requests;
+
 	private final Clock clock;
 
-	TransferController(FundsReservation reservation, TransferLookup transfers, Clock clock) {
+	TransferController(FundsReservation reservation, TransferLookup transfers,
+			IdempotentExecution requests, Clock clock) {
 		this.reservation = reservation;
 		this.transfers = transfers;
+		this.requests = requests;
 		this.clock = clock;
 	}
 
@@ -134,13 +156,16 @@ class TransferController {
 	 * from the request's own {@code Host}, and this application sits behind a dev-server proxy
 	 * on one origin and would sit behind an ingress on another.
 	 *
-	 * <p><b>The Idempotency Key is required here and used nowhere</b>, which is deliberate
-	 * rather than unfinished. The guarantee behind the key — that a retry is
-	 * indistinguishable from a first call — is ticket 17's, and it needs the record and the
-	 * claim mechanics of ticket 16 underneath it. What cannot wait is the <em>contract</em>:
-	 * a version of this endpoint that let a client omit the key is a version clients get
-	 * written against, and those are the clients still in production when the guarantee
-	 * arrives.
+	 * <p><b>The reservation runs inside {@link IdempotentExecution#executeOnce}</b>, which is
+	 * what makes a retry of a key indistinguishable from the first call: the port claims the
+	 * key, and either replays what the first request answered or opens the transaction this
+	 * reservation commits in. A repeat never reaches {@code reserve} at all, and the two ways
+	 * it can be refused instead are the {@code 409}s below.
+	 *
+	 * <p>What the key is compared against is
+	 * {@link CreateTransferRequest#payloadHash() the parsed request's hash}, not the bytes
+	 * that carried it, so a client that resends the same Transfer differently spelled is
+	 * retrying rather than reusing.
 	 *
 	 * <p>{@code required = false} with {@code @NotNull} rather than a required header,
 	 * because the two say the same thing to a caller and only one of them says it in the
@@ -161,8 +186,9 @@ class TransferController {
 			@UUID(version = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
 					letterCase = UUID.LetterCase.INSENSITIVE, allowNil = false) String idempotencyKey,
 			@Valid @RequestBody CreateTransferRequest request) {
-		TransferResponse requested =
-				TransferResponse.of(reservation.reserve(request.reservationAt(clock.instant())));
+		TransferResponse requested = requests.executeOnce(idempotencyKey, request.payloadHash(),
+				TransferResponse.class,
+				() -> TransferResponse.of(reservation.reserve(request.reservationAt(clock.instant()))));
 		return ResponseEntity.created(URI.create(PATH + "/" + requested.id())).body(requested);
 	}
 
@@ -229,9 +255,44 @@ class TransferController {
 		return problem;
 	}
 
+	/**
+	 * The two refusals a repeated Idempotency Key can meet. Both are {@code 409 Conflict} and
+	 * they give opposite advice, so what tells them apart is the {@code type} URN a client
+	 * branches on and the {@code Retry-After} that says whether coming back can help (design
+	 * decision 18).
+	 *
+	 * <p>{@code ResponseEntity} rather than the bare {@link ProblemDetail} the four refusals
+	 * above return, because a header is the whole point of this one and a returned
+	 * {@code ProblemDetail} carries no way to set one.
+	 */
+	@ExceptionHandler
+	ResponseEntity<ProblemDetail> handleRequestInProgress(RequestInProgressException refusal) {
+		return ResponseEntity.status(HttpStatus.CONFLICT)
+				.header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS)
+				.body(conflictOf(ProblemType.REQUEST_IN_PROGRESS, REQUEST_IN_PROGRESS_DETAIL));
+	}
+
+	/**
+	 * No {@code Retry-After}, and its absence is the machine-readable half of the refusal:
+	 * two payloads under one key cannot be made to agree by waiting, so a client that
+	 * retried this would loop forever. The key itself is not echoed back for the reason the
+	 * record stores a hash rather than the payload — one caller's request must not be
+	 * readable through another caller's guess at its key.
+	 */
+	@ExceptionHandler
+	ResponseEntity<ProblemDetail> handleIdempotencyKeyReused(IdempotencyKeyReusedException refusal) {
+		return ResponseEntity.status(HttpStatus.CONFLICT)
+				.body(conflictOf(ProblemType.IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_KEY_REUSED_DETAIL));
+	}
+
 	/** The status the four refusals above share, which is the only thing they share. */
 	private static ProblemDetail refusalOf(ProblemType type, String detail) {
 		return problemOf(HttpStatus.UNPROCESSABLE_ENTITY, type, detail);
+	}
+
+	/** The status the two idempotency refusals share, which is likewise all they share. */
+	private static ProblemDetail conflictOf(ProblemType type, String detail) {
+		return problemOf(HttpStatus.CONFLICT, type, detail);
 	}
 
 	/**

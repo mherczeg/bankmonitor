@@ -50,13 +50,118 @@ is read through. Three things to know before you start:
   constraint in a `V4` migration. Ticket 16 kept it deliberately rather than weakening a
   currently-true invariant for a caller that did not exist yet.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Repeating a succeeded key and payload returns the original `201` result, not a
+- [x] Repeating a succeeded key and payload returns the original `201` result, not a
       second Transfer
-- [ ] Repeating an in-progress key returns `409` with `Retry-After` under its own type URN
-- [ ] Reusing a key with a different payload returns `409` with no `Retry-After` under a
+- [x] Repeating an in-progress key returns `409` with `Retry-After` under its own type URN
+- [x] Reusing a key with a different payload returns `409` with no `Retry-After` under a
       distinct type URN
-- [ ] Retrying a failed key executes and produces a Transfer
-- [ ] Phase three commits the reservation, the Transfer and the `SUCCEEDED` status together
-- [ ] Duplicate resolution runs before phase two
+- [x] Retrying a failed key executes and produces a Transfer
+- [x] Phase three commits the reservation, the Transfer and the `SUCCEEDED` status together
+- [x] Duplicate resolution runs before phase two
+
+---
+
+## Comments
+
+### Built, 2026-09-06
+
+Twelve files, seven of them new. The design record is
+[`docs/design-decisions/17-duplicate-resolution.md`](../../../docs/design-decisions/17-duplicate-resolution.md);
+this is the short version.
+
+```
+src/main/java/hu/bankmonitor/payments/idempotency/IdempotentExecution.java        (new)
+src/main/java/hu/bankmonitor/payments/idempotency/ClaimedExecution.java           (new)
+src/main/java/hu/bankmonitor/payments/idempotency/RequestInProgressException.java (new)
+src/main/java/hu/bankmonitor/payments/idempotency/IdempotencyKeyReusedException.java (new)
+src/main/java/hu/bankmonitor/payments/idempotency/IdempotencyRecordRepository.java
+src/main/java/hu/bankmonitor/payments/idempotency/package-info.java
+src/main/java/hu/bankmonitor/payments/transfers/CreateTransferRequest.java
+src/main/java/hu/bankmonitor/payments/transfers/TransferController.java
+src/test/java/hu/bankmonitor/payments/idempotency/WhatARepeatOfAKeyGetsBackTest.java (new)
+src/test/java/hu/bankmonitor/payments/transfers/WhatMakesTwoTransferRequestsTheSameTest.java (new)
+src/test/java/hu/bankmonitor/payments/transfers/RetryingATransferRequestMovesMoneyOnceTest.java (new)
+src/test/java/hu/bankmonitor/payments/transfers/TransferRequestContractTest.java
+```
+
+`./mvnw -o test` — 213 tests, 0 failures, of which 25 are this slice's, across three
+layers: the port against the table, the wire contract with the port stubbed, and the whole
+thing end to end over a running server.
+
+**The last checkbox is satisfied by construction, not by a test that names it.** Duplicate
+resolution is the first thing `executeOnce` does, and phase two does not exist yet, so
+"runs before phase two" cannot be asserted directly. What is asserted instead is the
+property the ordering exists for: *a duplicate never runs the operation*, pinned by a run
+counter in `WhatARepeatOfAKeyGetsBackTest` and by the unchanged reserved balance in
+`aRepeatIsAnsweredFromTheFirstRequestAndReservesNothingMore`.
+
+### Two scope calls, both argued in the design record and neither confirmed
+
+**The port takes a fourth parameter.** §3 quotes
+`executeOnce(String, String, Supplier<T>)`; what ships takes a `Class<T>` too, because
+replaying a stored `201` means decoding stored text back into the caller's own response
+type and only the caller knows what that type is. The alternatives — hand back the raw
+text, or store a serialised Java object — are in the record with why each is worse.
+
+**Phase two has no slot.** Not an omission of §4's ordering but a refusal to declare a
+surface nothing calls, the same rule that kept the port out of ticket 16. The consequence
+is real and named here rather than discovered later: `executeOnce` runs the caller's
+`Supplier` *inside* the phase-three transaction, so ticket 26 cannot add an
+outside-transaction phase without changing the exported interface. That is 26's cost, taken
+knowingly against an interface no caller depends on yet.
+
+### For ticket 18
+
+- **The reclaim loser has no test, deliberately.** Two retries of a `FAILED` key race,
+  `reclaimFailed`'s guarded update matches for one, and the loser is answered
+  `RequestInProgressException`. Single-threaded that branch is unreachable — one caller
+  always wins its own uncontended update — and mocking `IdempotencyClaims` to return
+  `false` would assert that the `if` was typed correctly and nothing about the race. It is
+  18's subject exactly.
+- The end-to-end `409`-in-progress is likewise unprovokable single-threaded; the wire
+  contract for it is asserted with the port stubbed.
+- `RetryingATransferRequestMovesMoneyOnceTest` cleans `idempotency_records` by hand in
+  `@BeforeEach`/`@AfterEach` because `ReservationScenario` does not. Whatever 18 builds for
+  concurrent fixtures should absorb that.
+
+### Review, 2026-09-06
+
+`/mattpocock-skills:code-review` against `8b55553`, both axes. All six checkboxes verified
+against the code rather than against the write-up. Four things changed as a result.
+
+**The correctness one: `runUnderTheClaim` caught `RuntimeException`, so an `Error` escaped
+the release.** An OOM or a `StackOverflowError` out of the operation would skip
+`markFailed` and leave the row at `IN_PROGRESS` — the one state this whole path exists to
+prevent, reached by the one throwable the `catch` did not name, with no sweeper to undo it.
+Now `catch (Throwable)`: the `Error` is rethrown untouched because handling it is not this
+class's business, but releasing the claim is. Narrow in likelihood, and the general fix
+costs less than the narrow one.
+
+**Both new exceptions carried a field nobody could read.** `idempotencyKey` plus a getter
+on each, with no caller anywhere in `src/` and none possible: both handlers ignore the
+parameter, and each class's own Javadoc says the key is deliberately not echoed back. Every
+other exception in this repo carries state *because* a handler reads it out into the
+problem document. Dropped; the `super(...)` message still keeps the key for the log, and
+deleting the field collapsed the two classes' duplication to a one-line constructor each.
+
+**One test statement was concatenating its key into SQL** where every sibling in the file
+parameterises. Now a `PreparedStatement`.
+
+**One scope creep in the documentation.** `deferred.md`'s *client retry semantics* entry
+had been edited to declare the `409`-vs-`422` question "answered rather than open" — a
+decision ticket 17 was not asked to make. The ticket's table required `409` for both and
+that is all that shipped; the entry now records what shipped and leaves the status-code
+half open, with the client retry policy it would be decided alongside.
+
+**Three findings pushed back on, and answered from the design record rather than acted on.**
+The port's fourth parameter and the absent phase two are the two scope calls above, both
+already argued with their rejected alternatives. The third is that `replayOrReclaim` returns
+an empty `Optional` to mean "you hold the claim, go execute" — a control-flow signal in a
+value, which is a fair reading; the alternative is a sealed type for three outcomes, and it
+is written up rather than built because the port has one caller. A fourth, `Retry-After: 1`
+having no spec backing, is true and already has its own section.
+
+The four mutations in the design record's coverage table were re-run after these changes
+and are still killed at two layers each.

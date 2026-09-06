@@ -139,24 +139,83 @@ destination with is the one figure this service cannot yet compute: a Transfer s
 would have to carry the source Account's Currency on both sides, which is a wrong number in
 the table rather than a missing one.
 
+**Sending the same request twice moves money once.** That is what the Idempotency Key is
+for, and it is the whole of what a client has to do about retrying: resend the request, key
+and all, and the second call is answered from what the first one left behind rather than
+executed again.
+
+```console
+$ curl -s -X POST localhost:8080/api/transfers -H 'Content-Type: application/json' \
+    -H 'X-Idempotency-Key: 8f14e45f-ceea-467a-9c1c-7c9a5b3f2d10' \
+    -d '{"fromAccountId":1,"toAccountId":2,"amountMinorUnits":10050}'
+{"id":1,"fromAccountId":1,"toAccountId":2,"status":"PENDING",...}
+```
+
+The same `201`, the same Transfer, the same `Location` — and still one row in `transfers`,
+with €100.50 reserved once. The reservation is never reached a second time; the response is
+read back out of the key's record. What the key is compared against is the *parsed* request,
+so the same Transfer resent with its JSON members reordered is still a retry.
+
+**Two things can go wrong with a key, and they mean opposite things.** Both are `409`, so
+the `type` URN tells them apart — and so does `Retry-After`, which is present on exactly the
+one worth retrying:
+
+```console
+$ # the first request is still running
+$ curl -si -X POST ... -H 'X-Idempotency-Key: 8f14e45f-ceea-467a-9c1c-7c9a5b3f2d10' ...
+HTTP/1.1 409
+retry-after: 1
+{"type":"urn:problem:request-in-progress","title":"Conflict","status":409,
+ "detail":"A request with this Idempotency Key is still being processed. Retry with the same key.",
+ "instance":"/api/transfers"}
+
+$ # the same key, a different Transfer
+$ curl -si -X POST ... -H 'X-Idempotency-Key: 8f14e45f-ceea-467a-9c1c-7c9a5b3f2d10' \
+    -d '{"fromAccountId":1,"toAccountId":2,"amountMinorUnits":20000}'
+HTTP/1.1 409
+{"type":"urn:problem:idempotency-key-reused","title":"Conflict","status":409,
+ "detail":"This Idempotency Key already stands for a different Transfer. Use a new key.",
+ "instance":"/api/transfers"}
+```
+
+Wait and resend the first; never resend the second. A key names one intent, so two payloads
+under one key is a client that reused a key it should have replaced, and no amount of
+retrying will make the two agree. The key behind the refusal is deliberately not echoed
+back, and the record stores a hash rather than the payload, so one caller's request cannot
+be read out through another caller's guess at its key.
+
+**A request that was refused releases its key.** Every refusal above — insufficient funds, an
+unknown Account, a cross-Currency pair — is a reservation-time failure, and all of them are
+retryable under the *same* key once their cause is gone. So an operator who funds the
+Account and resends the identical request gets the Transfer, rather than having to work out
+whether the first attempt took effect and mint a new key if it did not.
+
+Underneath, requesting a Transfer is three phases: the key is claimed in its own committed
+transaction, where a unique constraint serialises concurrent duplicates; anything slow is
+resolved with no locks held; and then the reservation, the Transfer, its Check Ledger and
+the key's stored response are written in **one** transaction. Bundling that last write is
+deliberate — separate commits would let a crash strand reserved funds behind a key that
+answers `409` forever.
+
 That is the whole business API so far; the rest of `/v3/api-docs` is still ahead of the
 build.
 
 ## What is built so far
 
-Tickets 01–14, 16–20, 24 and 31–36 of 44: the skeleton, schema management, the package
+Tickets 01–17, 19–20, 24 and 31–36 of 44: the skeleton, schema management, the package
 structure the domain code will be written into, the security chain in front of it, the error
 contract every endpoint will answer with, the value type every amount in the system is
 expressed in and the single conversion between currencies, the first entity and the first
 table, the first endpoint that writes to it and the first that reads it back, the Transfer
 and the locking rule the concurrency design rests on, the reservation that rule protects,
-the endpoint a client posts a Transfer to, the claim on an Idempotency Key, the Check
-Ledger a Transfer has to clear before it settles, the one operation that answers a Check
-and moves the money, the third-party rate provider the resilience work will be aimed at,
-the frontend's shell, the generated API types that join the two halves, the frontend edge
-that turns Minor Units into decimals, the reading an operator gets of a failed request, the
-client half of the Idempotency Key, the stream message that is nothing but a cache
-invalidation, and the two ecosystem bets that had to be settled first. **Both bets won.**
+the endpoint a client posts a Transfer to and the two it is read back from, the claim on an
+Idempotency Key and the duplicate resolution that turns that claim into an answer, the Check
+Ledger a Transfer has to clear before it settles, the one operation that answers a Check and
+moves the money, the third-party rate provider the resilience work will be aimed at, the
+frontend's shell, the generated API types that join the two halves, the frontend edge that
+turns Minor Units into decimals, the reading an operator gets of a failed request, the client
+half of the Idempotency Key, the stream message that is nothing but a cache invalidation, and
+the two ecosystem bets that had to be settled first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type

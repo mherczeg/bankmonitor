@@ -5,6 +5,9 @@ import hu.bankmonitor.payments.accounts.UnknownAccountException;
 import hu.bankmonitor.payments.common.Currency;
 import hu.bankmonitor.payments.common.Money;
 import hu.bankmonitor.payments.common.ProblemType;
+import hu.bankmonitor.payments.idempotency.IdempotencyKeyReusedException;
+import hu.bankmonitor.payments.idempotency.IdempotentExecution;
+import hu.bankmonitor.payments.idempotency.RequestInProgressException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -24,12 +27,16 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willReturn;
+import static org.mockito.BDDMockito.willThrow;
 
 /**
  * What an API client posts to request a Transfer, and what comes back.
@@ -61,9 +68,29 @@ class TransferRequestContractTest {
 	@MockitoBean
 	private Clock clock;
 
+	@MockitoBean
+	private IdempotentExecution requests;
+
 	@BeforeEach
 	void fixTheInstantTheTransferIsRequestedAt() {
 		given(clock.instant()).willReturn(REQUESTED_AT);
+	}
+
+	/**
+	 * A first request for every key, unless a test says otherwise: the port runs the
+	 * operation it was handed and returns what it answered. Without it every assertion in
+	 * this class about the {@code 201} would be made against the {@code null} an unstubbed
+	 * mock returns, which is not what an endpoint with no duplicate to resolve does.
+	 *
+	 * <p>The three tests that replace this stubbing use {@code willX().given(mock)} rather
+	 * than {@code given(mock.x())}, because the second form <em>calls</em> the mock to
+	 * record what to stub — and calling it here runs the answer above against the null
+	 * arguments the matchers stand in for.
+	 */
+	@BeforeEach
+	void runWhateverTheEndpointHandsToTheIdempotentPort() {
+		given(requests.executeOnce(any(), any(), any(), any()))
+				.willAnswer(call -> call.getArgument(3, Supplier.class).get());
 	}
 
 	@Test
@@ -203,6 +230,93 @@ class TransferRequestContractTest {
 	}
 
 	/**
+	 * The endpoint's half of design decision 5: it hands the key, what the request said and
+	 * the operation to the port, and answers whatever comes back — including the two
+	 * refusals, which are the only ones here that are not {@code 422}.
+	 *
+	 * <p>The two {@code 409}s share a status and mean opposite things, so both halves of
+	 * what tells them apart are asserted every time: the {@code type} URN a client branches
+	 * on, and the {@code Retry-After} that says whether coming back can ever help.
+	 */
+	@Nested
+	@DisplayName("a repeat of an Idempotency Key")
+	class Repeats {
+
+		/**
+		 * The guarantee as a client sees it. The response is the first request's, so the
+		 * {@code Location} still points at the Transfer that already exists — and the
+		 * reservation is never reached, which is the half that says no second Transfer was
+		 * created rather than merely that none was reported.
+		 */
+		@Test
+		@DisplayName("replays the first request's 201 without reserving anything again")
+		void replaysTheFirstRequestsResponse() {
+			willReturn(new TransferResponse(31L, 5L, 9L, TransferStatus.PENDING,
+					100_50L, Currency.EUR, 100_50L, Currency.EUR, REQUESTED_AT))
+					.given(requests).executeOnce(any(), any(), eq(TransferResponse.class), any());
+
+			MvcTestResult result = request(VALID_PAYLOAD);
+
+			assertThat(result).hasStatus(HttpStatus.CREATED);
+			assertThat(result).hasHeader(HttpHeaders.LOCATION, "/api/transfers/31");
+			assertThat(result).bodyJson().extractingPath("$.id").isEqualTo(31);
+			then(reservation).shouldHaveNoInteractions();
+		}
+
+		/**
+		 * Retryable, and the header is what says so. A client meeting this one has sent a
+		 * request that may still succeed under the very key it is holding, so the only
+		 * correct action is to wait and send it again.
+		 */
+		@Test
+		@DisplayName("whose first request has not finished is 409 with Retry-After")
+		void refusesAKeyWhoseWorkIsUnfinished() {
+			willThrow(new RequestInProgressException(IDEMPOTENCY_KEY))
+					.given(requests).executeOnce(any(), any(), any(), any());
+
+			MvcTestResult result = request(VALID_PAYLOAD);
+
+			assertThatIsAConflict(result, ProblemType.REQUEST_IN_PROGRESS);
+			assertThat(result).headers().hasSingleValue(HttpHeaders.RETRY_AFTER, "1");
+			then(reservation).shouldHaveNoInteractions();
+		}
+
+		/**
+		 * The refusal a client must never repeat, and the absent header is what says so.
+		 * Retrying cannot make two payloads agree, so a {@code Retry-After} here would
+		 * invite a loop that can only ever be refused again.
+		 */
+		@Test
+		@DisplayName("carrying a different payload is 409 with no Retry-After")
+		void refusesAKeyReusedForADifferentPayload() {
+			willThrow(new IdempotencyKeyReusedException(IDEMPOTENCY_KEY))
+					.given(requests).executeOnce(any(), any(), any(), any());
+
+			MvcTestResult result = request(VALID_PAYLOAD);
+
+			assertThatIsAConflict(result, ProblemType.IDEMPOTENCY_KEY_REUSED);
+			assertThat(result).doesNotContainHeader(HttpHeaders.RETRY_AFTER);
+			then(reservation).shouldHaveNoInteractions();
+		}
+
+		/**
+		 * What the port is given to decide with. The hash is the parsed request's own, so a
+		 * second posting of the same Transfer produces the same value however its JSON was
+		 * spelled — which is why this one is posted with its members reordered and padded.
+		 */
+		@Test
+		@DisplayName("is decided from the key and what the request said, not from the bytes that carried it")
+		void handsThePortTheKeyAndThePayloadsHash() {
+			request("""
+					{"amountMinorUnits": 10050,   "toAccountId": 9, "fromAccountId": 5}""");
+
+			then(requests).should().executeOnce(eq(IDEMPOTENCY_KEY),
+					eq(new CreateTransferRequest(5L, 9L, 100_50L).payloadHash()),
+					eq(TransferResponse.class), any());
+		}
+	}
+
+	/**
 	 * A Transfer of nothing is not a smaller Transfer, and one of a negative amount is a
 	 * Transfer in the other direction wearing the wrong Accounts. Both are refused against
 	 * the field that carried them rather than reaching the reservation, where the source
@@ -336,6 +450,21 @@ class TransferRequestContractTest {
 		assertThat(result).bodyJson().extractingPath("$.title").isNotNull();
 		assertThat(result).bodyJson().extractingPath("$.detail").asString().isNotBlank();
 		assertThat(result).bodyJson().extractingPath("$.status").isEqualTo(422);
+		assertThat(result).bodyJson().extractingPath("$.instance").isEqualTo("/api/transfers");
+	}
+
+	/**
+	 * The two refusals that share {@code 409} and disagree about everything else. The status
+	 * is asserted here and the header at each call site, because the header is the one part
+	 * they do not share.
+	 */
+	private static void assertThatIsAConflict(MvcTestResult result, ProblemType expected) {
+		assertThat(result).hasStatus(HttpStatus.CONFLICT);
+		assertThat(result).hasContentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON);
+		assertThat(result).bodyJson().extractingPath("$.type").isEqualTo(expected.urn());
+		assertThat(result).bodyJson().extractingPath("$.title").isNotNull();
+		assertThat(result).bodyJson().extractingPath("$.detail").asString().isNotBlank();
+		assertThat(result).bodyJson().extractingPath("$.status").isEqualTo(409);
 		assertThat(result).bodyJson().extractingPath("$.instance").isEqualTo("/api/transfers");
 	}
 

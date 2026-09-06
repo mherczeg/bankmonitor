@@ -3,7 +3,11 @@ package hu.bankmonitor.payments.transfers;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.HexFormat;
 
 /**
  * What requesting a Transfer takes: the Account the money leaves, the Account it arrives
@@ -41,5 +45,40 @@ record CreateTransferRequest(
 	 */
 	ReservationRequest reservationAt(Instant requestedAt) {
 		return new ReservationRequest(fromAccountId, toAccountId, amountMinorUnits, requestedAt);
+	}
+
+	/**
+	 * What this request said, reduced to the value an Idempotency Key is compared against —
+	 * so that a repeat of a key carrying a different Transfer is refused rather than
+	 * answered with the first one's response.
+	 *
+	 * <p><b>The parsed request is hashed, not the bytes that arrived.</b> Two postings of
+	 * the same Transfer that differ in whitespace or member order are the same intent, and
+	 * would be two hashes if the body were hashed — which turns a client's retry into a
+	 * refusal it can never clear. It also keeps the request stream out of it: reading the
+	 * body twice needs a caching filter, which design decision 3 rejected the request
+	 * pipeline for in the first place.
+	 *
+	 * <p>It lives on the request rather than in a shared helper because what makes two
+	 * requests the same is a question about <em>this</em> payload: the next endpoint to take
+	 * a key will have its own components and its own answer, and a generic hash over
+	 * whatever was posted would only look reusable.
+	 *
+	 * <p>Never called before validation has run, which is what lets it dereference all
+	 * three.
+	 */
+	String payloadHash() {
+		String payload = "%d:%d:%d".formatted(fromAccountId, toAccountId, amountMinorUnits);
+		return HexFormat.of().formatHex(sha256().digest(payload.getBytes(StandardCharsets.UTF_8)));
+	}
+
+	private static MessageDigest sha256() {
+		try {
+			return MessageDigest.getInstance("SHA-256");
+		}
+		catch (NoSuchAlgorithmException unreachable) {
+			// Every Java platform is required to implement SHA-256.
+			throw new IllegalStateException(unreachable);
+		}
 	}
 }

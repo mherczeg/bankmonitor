@@ -92,12 +92,13 @@ build.
 
 ## What is built so far
 
-Tickets 01–10 and 12 of 44: the skeleton, schema management, the package structure the
+Tickets 01–12, 31 and 32 of 44: the skeleton, schema management, the package structure the
 domain code will be written into, the security chain in front of it, the error contract
 every endpoint will answer with, the value type every amount in the system is expressed in
 and the single conversion between currencies, the first entity and the first table, the
-first endpoint that writes to it and the first that reads it back, the locking rule the
-concurrency design rests on, and the two ecosystem bets that had to be settled first.
+first endpoint that writes to it and the first that reads it back, the Transfer and the
+locking rule the concurrency design rests on, the frontend's shell, the generated API types
+that join the two halves, and the two ecosystem bets that had to be settled first.
 **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
@@ -260,9 +261,10 @@ Content-Type: application/problem+json
  "status":404,"detail":"This API has no endpoint at that path.","instance":"/api/nope"}
 ```
 
-The URNs live in one place — the `ProblemType` enum in `common` — so the backend and the
-frontend's generated types share one vocabulary, and a URN that stops being emitted
-becomes a type error rather than a silently dead branch in the client.
+The URNs live in one place — the `ProblemType` enum in `common` — and reach the frontend
+through the OpenAPI document, so the two runtimes share one vocabulary and a URN that stops
+being emitted becomes a type error rather than a silently dead branch in the client. The
+next section is how.
 
 The implementation is Spring's own `ResponseEntityExceptionHandler`, not a hand-rolled
 envelope. Spring already answers `@Valid` rejections, `415`, `405` and malformed JSON
@@ -286,6 +288,44 @@ rather than an intention.
 **One error does not pass through here:** a refusal from the security filter chain is
 raised before the dispatcher and answered with an empty body. Nothing is denied on
 purpose yet; see the TODO list.
+
+## The frontend's types are generated, not written
+
+`/v3/api-docs` is not documentation here — it is a build input. `openapi-typescript` turns
+it into `frontend/src/api/schema.gen.ts`, and every API shape the browser code touches is
+an alias onto that file.
+
+**This is what makes the browser tests worth running.** They mock the network, so every
+response in them is a shape someone wrote by hand; without generated types they would prove
+the frontend copes with shapes its own test author invented. With them, a mock the backend
+would never send does not compile. `frontend/src/api/types.test.ts` demonstrates it on four
+drifted shapes — an amount as a string, a member left out, a currency this service does not
+quote, an invented problem-type URN — each pinned by a `@ts-expect-error` that fails the
+build if it ever stops being an error.
+
+Two things had to change on this side for that to be true rather than nearly true:
+
+| In the document | Why it is not free |
+|---|---|
+| The `ProblemType` URNs, the problem document's shape, and a `default` response on every operation | No controller *returns* a problem document — `ProblemDocumentAdvice` does, after the handler threw — so springdoc has nothing to introspect and publishes an API that appears never to fail. `OpenApiConfiguration` contributes the three schemas, building the URN list from `ProblemType.values()` so the vocabulary still exists in exactly one place. `default` is the literal truth: any status an operation does not name is this document. |
+| `required` on the response shape | springdoc derives `required` from constraint annotations, and a response is never validated — so an unannotated response record publishes a schema whose every member is optional, and a mock omitting the balance would still compile. `AccountResponse` says so itself, and `AccountSchemaReachesTheDocumentTest` compares that list against the record's own components so the two cannot drift apart. |
+
+**Regenerating is a command, not a build step:**
+
+```bash
+cd frontend && npm run api-types    # with the backend running on 8080
+```
+
+The output is committed, which is the honest trade: a fresh clone type-checks with no
+generator run and no backend, and in exchange the file can go stale if nobody regenerates
+it. Nothing enforces it — there is no CI here to enforce it *in* — so the discipline is to
+regenerate whenever the API moves and to **read the diff** rather than commit past it. A
+change in that file is the backend's contract moving underneath four screens, and the type
+errors that follow are the list of places that have to move with it. `.gitattributes` leaves
+the file **un**marked as generated, for that reason — the mark is what collapses a diff in a
+pull request, and this is the diff worth opening. The
+residual risk, and the CI step that would close it, are in
+[`docs/deferred.md`](docs/deferred.md).
 
 ## Module boundaries
 

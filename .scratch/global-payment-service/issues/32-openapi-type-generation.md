@@ -17,10 +17,10 @@ file as a signal worth reading, not noise to commit past.
 
 **Blocked by:** 10, 31
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A documented command regenerates the types from a running backend
-- [ ] The frontend imports its API types from the generated file only
-- [ ] A deliberately wrong hand-written shape fails the build, demonstrated once
-- [ ] The problem-type URNs are available to the frontend from the generated output
-- [ ] How and when to regenerate is written down where the next slice will look
+- [x] A documented command regenerates the types from a running backend
+- [x] The frontend imports its API types from the generated file only
+- [x] A deliberately wrong hand-written shape fails the build, demonstrated once
+- [x] The problem-type URNs are available to the frontend from the generated output
+- [x] How and when to regenerate is written down where the next slice will look

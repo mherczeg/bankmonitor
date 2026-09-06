@@ -520,6 +520,9 @@ distinguished by their `type` URN (`urn:problem:request-in-progress` vs
 > **[Ticket 09](09-create-account-endpoint.md)** widens that ticket's rule: a
 > body Jackson rejected *at a member* is a validation failure with an `errors`
 > entry, not `urn:problem:malformed-request`.
+> **[Ticket 32](32-openapi-type-generation.md)** found that none of this reaches
+> `/v3/api-docs` unaided — the advice produces it, so springdoc has nothing to
+> introspect — and publishes the URNs and the document's shape from the enum.
 
 ---
 
@@ -837,6 +840,10 @@ late.
 
 > **Confirmed in [ticket 01](01-project-skeleton.md)**, on springdoc's 3.x line
 > — 2.x targets Boot 3 and does not work here.
+>
+> **Built in [ticket 32](32-openapi-type-generation.md)**, which found that the
+> document springdoc publishes unaided describes neither the errors nor which
+> response members are always sent, and closed both on the backend first.
 
 ---
 

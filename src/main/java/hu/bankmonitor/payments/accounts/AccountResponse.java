@@ -1,6 +1,7 @@
 package hu.bankmonitor.payments.accounts;
 
 import hu.bankmonitor.payments.common.Currency;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * One Account as the API reports it: what it holds, what is spoken for, and what is left
@@ -27,7 +28,17 @@ import hu.bankmonitor.payments.common.Currency;
  * from. It is sent rather than left for the client to subtract because it is the figure an
  * overdraft check tests against, and a client that computed it would be a second
  * implementation of the rule.
+ *
+ * <p><b>Every member is listed as required, because springdoc cannot work that out.</b> It
+ * derives {@code required} from constraint annotations, and a response is never validated,
+ * so an unannotated response record publishes a schema on which every member is optional —
+ * and ticket 32's generated types would then accept a mock that simply omits the balance.
+ * {@code AccountSchemaReachesTheDocumentTest} holds the list to this record's components,
+ * so adding a field and forgetting the list fails rather than quietly narrowing the
+ * contract.
  */
+@Schema(requiredProperties = {
+		"id", "currency", "balanceMinorUnits", "reservedAmountMinorUnits", "availableBalanceMinorUnits"})
 record AccountResponse(
 		long id,
 		Currency currency,

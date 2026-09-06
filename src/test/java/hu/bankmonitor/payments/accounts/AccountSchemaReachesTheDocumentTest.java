@@ -4,6 +4,8 @@ import hu.bankmonitor.testsupport.BootedApplicationTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.RecordComponent;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,6 +40,30 @@ class AccountSchemaReachesTheDocumentTest extends BootedApplicationTest {
 				.jsonPath("$.components.schemas.AccountResponse.properties.currency.enum")
 				.value(List.class, currencies ->
 						assertThat(currencies).containsExactlyInAnyOrder("EUR", "USD", "HUF"));
+	}
+
+	/**
+	 * springdoc reads {@code required} off constraint annotations, and a response is never
+	 * validated — so left alone, {@link AccountResponse} publishes a schema whose every
+	 * member is optional, and ticket 32's generated types accept a mock that omits the
+	 * balance. The record says so itself with {@code @Schema(requiredProperties = ...)},
+	 * and this compares that list against the record's own components so the two cannot
+	 * drift apart.
+	 */
+	@Test
+	@DisplayName("the response schema says every member is always sent")
+	void publishesEveryResponseMemberAsRequired() {
+		List<String> everyComponent = Arrays.stream(AccountResponse.class.getRecordComponents())
+				.map(RecordComponent::getName)
+				.toList();
+
+		client().get().uri("/v3/api-docs")
+				.exchange()
+				.expectStatus().isOk()
+				.expectBody()
+				.jsonPath("$.components.schemas.AccountResponse.required")
+				.value(List.class, required ->
+						assertThat(required).containsExactlyInAnyOrderElementsOf(everyComponent));
 	}
 
 	/**

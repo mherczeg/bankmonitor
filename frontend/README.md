@@ -32,6 +32,7 @@ sees one origin in development.
 | `npm test` | Vitest, once |
 | `npm run lint` | oxlint |
 | `npm run routes` | regenerates `src/routeTree.gen.ts` on its own |
+| `npm run api-types` | regenerates `src/api/schema.gen.ts` from the running backend |
 
 ## How it is put together
 
@@ -39,7 +40,7 @@ sees one origin in development.
 src/
   main.tsx            mounts the router inside the query client, imports Bootstrap once
   routeTree.gen.ts    generated — see below
-  api/                the query client and its retry rule
+  api/                the API's types, the query client and its retry rule
   routes/             one file per route; the file tree is the URL tree
 ```
 
@@ -74,3 +75,30 @@ next to the component that uses it (`src/routes/shell.module.css` is the first).
 optimisation — a gzip encoder holds a two-line event until it has enough bytes to emit,
 so a compressed event stream arrives as one clump when the connection closes, and only in
 development. The line in `vite.config.ts` puts that failure out of reach.
+
+## The API types, and when to regenerate them
+
+**Nothing here describes the API by hand.** `src/api/schema.gen.ts` is generated from the
+OpenAPI document the backend serves, and `src/api/types.ts` is the only module that reads
+it — everything else imports `Account`, `ProblemDocument`, `ProblemType` and the rest from
+there, under names that read at a call site. Typed that way, a mock the backend would never
+send stops compiling, which is what makes the browser tests worth running; `src/api/types.test.ts`
+pins four such shapes under `@ts-expect-error`. The [root README](../README.md#the-frontends-types-are-generated-not-written)
+has the argument, and what had to change on the backend before the document was worth
+generating from.
+
+**Regenerate whenever the backend's API moves**, which means: a new or renamed endpoint, a
+changed request or response shape, a new problem-type URN. With the backend running:
+
+```bash
+npm run api-types      # reads http://localhost:8080/v3/api-docs
+```
+
+Then read the diff rather than committing past it. A change in that file is the backend's
+contract moving underneath four screens, and the type errors that follow are the list of
+places that have to move with it. `.gitattributes` deliberately does *not* mark the file
+`linguist-generated`, so GitHub leaves its diff open in a pull request instead of collapsing
+it.
+
+Nothing enforces the regeneration — the file is committed and refreshed by hand, so it can
+go stale, and the residual risk is written up in `../docs/deferred.md`.

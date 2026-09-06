@@ -58,8 +58,12 @@ class ProblemDocumentAdvice extends ResponseEntityExceptionHandler {
 	 * The extension member carrying one entry per rejected field. Spring's default packs
 	 * every violation into a single sentence in {@code detail}, which a form cannot mark
 	 * up against the input that caused it.
+	 *
+	 * <p>Package-private rather than private because {@link OpenApiConfiguration} publishes
+	 * the member in the OpenAPI document: unlike the RFC 9457 members around it, this name
+	 * is this codebase's own invention, and renaming it here has to rename it there.
 	 */
-	private static final String VALIDATION_ERRORS = "errors";
+	static final String VALIDATION_ERRORS = "errors";
 
 	private static final URI UNNAMED = URI.create("about:blank");
 

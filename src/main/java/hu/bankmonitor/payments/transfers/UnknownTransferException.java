@@ -11,6 +11,12 @@ package hu.bankmonitor.payments.transfers;
  *
  * <p>It carries the identifier so the answer can name what was looked for, on
  * {@code UnknownAccountException}'s precedent.
+ *
+ * <p>{@link VerdictRecording} raises the same exception for a Verdict naming no Transfer, and
+ * decides existence under the row lock rather than checking for it beforehand — for the same
+ * reason an Account's is decided there: a read taken outside the transaction could be true
+ * when it was taken and false by the time the Verdict is written. What status that earns is
+ * still the adapter's, and ticket 21's endpoint need not answer it as this one's {@code 404}.
  */
 class UnknownTransferException extends RuntimeException {
 

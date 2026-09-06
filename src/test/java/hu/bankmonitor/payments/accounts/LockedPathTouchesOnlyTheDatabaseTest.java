@@ -76,8 +76,9 @@ class LockedPathTouchesOnlyTheDatabaseTest {
 			"hu.bankmonitor.payments.mockfx..");
 
 	/**
-	 * Every operation that takes these row locks: the one that exports them, and the
-	 * reservation that opens the transaction they are held in.
+	 * Every operation that takes these row locks: the one that exports them, and the two that
+	 * open a transaction the locks are held in — the reservation that requests a Transfer and
+	 * the Verdict that ends one.
 	 *
 	 * <p>Deliberately not "everything that calls {@link AccountLocking}". The caller is
 	 * where the transaction is opened, so widening this to callers looks stricter and is
@@ -95,7 +96,8 @@ class LockedPathTouchesOnlyTheDatabaseTest {
 	 */
 	private static final List<String> LOCK_HOLDERS = List.of(
 			AccountLocking.class.getName(),
-			"hu.bankmonitor.payments.transfers.FundsReservation");
+			"hu.bankmonitor.payments.transfers.FundsReservation",
+			"hu.bankmonitor.payments.transfers.VerdictRecording");
 
 	@Test
 	@DisplayName("the operation that holds the locks reaches nothing but the database")

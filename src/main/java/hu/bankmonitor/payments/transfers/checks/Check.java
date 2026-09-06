@@ -13,7 +13,7 @@ package hu.bankmonitor.payments.transfers.checks;
  * V4__check_ledger.sql} lists them in a check constraint, and renaming one is a migration
  * rather than a refactor.
  */
-enum Check {
+public enum Check {
 
 	/** Automated fraud screening, answered by a service the outbox pushes the request to. */
 	FRAUD,

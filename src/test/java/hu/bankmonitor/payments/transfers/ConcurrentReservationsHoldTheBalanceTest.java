@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * easy to write in a shape that proves nothing. Three traps, avoided deliberately:
  *
  * <ul>
- * <li><b>A transactional test method.</b> {@link ReservationScenario} is not annotated
+ * <li><b>A transactional test method.</b> {@link TransferScenario} is not annotated
  * {@code @Transactional}, so each thread's reservation really commits. Wrapped in one
  * transaction instead, the second thread would be looking at a connection that cannot see
  * the first thread's uncommitted work, and the race would be invisible rather than absent.
@@ -57,7 +57,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the suite it means.
  */
 @Import(RowLockBarrier.class)
-class ConcurrentReservationsHoldTheBalanceTest extends ReservationScenario {
+class ConcurrentReservationsHoldTheBalanceTest extends TransferScenario {
 
 	private static final long LOWER_ID = 1L;
 	private static final long HIGHER_ID = 2L;

@@ -93,6 +93,17 @@ class CheckLedgerEntry {
 		return id;
 	}
 
+	/**
+	 * Whether this row is the one the given Check answers.
+	 *
+	 * <p>What it is for is telling the two causes of a guarded update matching nothing apart:
+	 * the Check was already answered, or the Transfer never required it. Only the second is a
+	 * caller naming something that does not exist.
+	 */
+	boolean isFor(Check check) {
+		return requiredCheck == check;
+	}
+
 	/** Whether this Check has said no — the one answer that ends a Transfer on its own. */
 	boolean isRejected() {
 		return verdict == Verdict.REJECTED;

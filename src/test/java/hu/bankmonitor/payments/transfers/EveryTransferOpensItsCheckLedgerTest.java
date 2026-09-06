@@ -30,11 +30,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * NothingButTheReservationCreatesATransferTest} holds that there is no second path. What is
  * left for a booted test is that the one path writes what it should.
  *
- * <p>Rows come back in SQL rather than through the entities for {@link ReservationScenario}'s
+ * <p>Rows come back in SQL rather than through the entities for {@link TransferScenario}'s
  * reason: a round trip through the mapping under test would agree with itself whatever it
  * wrote.
  */
-class EveryTransferOpensItsCheckLedgerTest extends ReservationScenario {
+class EveryTransferOpensItsCheckLedgerTest extends TransferScenario {
 
 	private static final long SOURCE = 1L;
 	private static final long DESTINATION = 2L;

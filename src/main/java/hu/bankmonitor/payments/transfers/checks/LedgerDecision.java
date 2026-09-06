@@ -11,12 +11,13 @@ import java.util.Collection;
  * also loads rows and moves money would only be reachable through a database, and the
  * mixed-verdict case that matters most would be set up by writing four tables.
  *
- * <p>Ticket 20 is the caller. It loads the rows, applies the answer here, and owns
- * everything with a side effect: a Transfer advances by conditional update, so two
- * deliveries of the same Verdict can both reach this function and only one of them can win
- * the write that follows.
+ * <p>{@link CheckLedger#record} is the caller. It answers one Check, loads the rows and asks
+ * here; {@code VerdictRecording} owns everything with a side effect. Two deliveries of the
+ * same Verdict both reach this function and both get the same answer, because only the first
+ * of them changed a row — which is what makes the second one safe to act on rather than
+ * merely harmless.
  */
-enum LedgerDecision {
+public enum LedgerDecision {
 
 	/** Every Check has approved. The money moves, once. */
 	SETTLE,

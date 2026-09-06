@@ -13,7 +13,7 @@ package hu.bankmonitor.payments.transfers.checks;
  * whatever the rest of the ledger says. {@link LedgerDecision} is where that asymmetry is
  * written down.
  */
-enum Verdict {
+public enum Verdict {
 
 	/** This Check is satisfied. The Transfer settles once every other Check agrees. */
 	APPROVED,

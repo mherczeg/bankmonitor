@@ -1,6 +1,7 @@
 package hu.bankmonitor.payments.transfers;
 
 import hu.bankmonitor.payments.common.Currency;
+import hu.bankmonitor.payments.transfers.checks.Check;
 import hu.bankmonitor.testsupport.BootedApplicationTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,7 +13,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The Accounts, the reads and the cleanup the two reservation tests share.
+ * The Accounts, the reads and the cleanup every test of a Transfer's life shares — the
+ * reservation that opens one and the Verdict that closes it.
  *
  * <p><b>Nothing here is transactional, and that is the point.</b> A {@code @Transactional}
  * test method makes every write it performs invisible to any other connection and rolls the
@@ -20,7 +22,7 @@ import java.util.Map;
  * {@link ConcurrentReservationsHoldTheBalanceTest}'s second thread unable to see the first
  * thread's reservation, and every assertion in
  * {@link ReservedFundsReachTheTableTest} agreeing with a transaction that never committed.
- * Both classes need real commits, so the price is paying for the cleanup by hand.
+ * Every subclass needs real commits, so the price is paying for the cleanup by hand.
  *
  * <p>The tables are emptied before each method as well as after: one in-memory H2 database is
  * shared by every test in the suite, whichever application context booted it, and the
@@ -30,12 +32,15 @@ import java.util.Map;
  * asserted is what reached the database — a round trip through the mapping under test would
  * agree with itself whatever it wrote.
  */
-abstract class ReservationScenario extends BootedApplicationTest {
+abstract class TransferScenario extends BootedApplicationTest {
 
 	static final Instant REQUESTED_AT = Instant.parse("2026-09-05T10:15:30Z");
 
 	@Autowired
 	FundsReservation reservation;
+
+	@Autowired
+	VerdictRecording verdicts;
 
 	@Autowired
 	JdbcTemplate database;
@@ -91,6 +96,19 @@ abstract class ReservationScenario extends BootedApplicationTest {
 
 	List<Map<String, Object>> checkLedgerRows() {
 		return database.queryForList("SELECT * FROM check_ledger ORDER BY id");
+	}
+
+	/** The status the column holds, as the string it holds it as. */
+	String statusOf(long transferId) {
+		return database.queryForObject(
+				"SELECT status FROM transfers WHERE id = ?", String.class, transferId);
+	}
+
+	/** How one Check has been answered for one Transfer, {@code null} while it is outstanding. */
+	String verdictOn(long transferId, Check check) {
+		return database.queryForObject(
+				"SELECT verdict FROM check_ledger WHERE transfer_id = ? AND required_check = ?",
+				String.class, transferId, check.name());
 	}
 
 	private long minorUnitsOf(String column, long accountId) {

@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code AccountLockIsASelectForUpdateTest} and {@code AccountsLockInAscendingIdOrderTest}.
  */
 @Import(CapturingStatementInspector.class)
-class TheBalanceCheckHappensUnderTheLockTest extends ReservationScenario {
+class TheBalanceCheckHappensUnderTheLockTest extends TransferScenario {
 
 	private static final long SOURCE = 1L;
 	private static final long DESTINATION = 2L;

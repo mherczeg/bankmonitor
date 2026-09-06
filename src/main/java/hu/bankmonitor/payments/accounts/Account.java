@@ -112,4 +112,63 @@ public class Account {
 		}
 		reservedAmount = reservedAmount.plus(amount);
 	}
+
+	/**
+	 * Pays a Transfer this Account had reserved for: the balance falls by the amount and the
+	 * Reserved Amount falls with it, because the reservation is consumed rather than left
+	 * behind. The Available Balance therefore does not move — the money was already spoken
+	 * for, and settling is where it actually leaves.
+	 *
+	 * <p><b>Both figures, and that is the whole reason this is one method.</b> A debit
+	 * without the matching consumption would pass every balance assertion and leave the
+	 * Account holding a reservation for a Transfer that is finished, so every later overdraft
+	 * check would test against a figure short by it, for ever.
+	 *
+	 * @throws IllegalArgumentException if the amount exceeds the Reserved Amount, or is in
+	 *                                  another Currency
+	 */
+	public void settle(Money amount) {
+		reservedAmount = reservedAmount.minus(withinTheReservedAmount(amount));
+		balance = balance.minus(amount);
+	}
+
+	/**
+	 * Gives up a reservation without moving money, which is what all three of rejection,
+	 * expiry and any later cancellation do: the Reserved Amount falls, the balance does not,
+	 * and the Available Balance rises back to where it was before the Transfer was requested.
+	 *
+	 * @throws IllegalArgumentException if the amount exceeds the Reserved Amount, or is in
+	 *                                  another Currency
+	 */
+	public void release(Money amount) {
+		reservedAmount = reservedAmount.minus(withinTheReservedAmount(amount));
+	}
+
+	/**
+	 * Receives a settled Transfer. Nothing is reserved on the receiving side — the money
+	 * arrives owing nobody anything — so the balance and the Available Balance rise together,
+	 * and there is no figure this could be asked to overdraw.
+	 *
+	 * @throws IllegalArgumentException if the amount is in another Currency
+	 */
+	public void credit(Money amount) {
+		balance = balance.plus(amount);
+	}
+
+	/**
+	 * The one refusal both outward movements share: neither may take the Reserved Amount
+	 * below zero. An Account that could would go on to report an Available Balance larger
+	 * than it holds, and the next reservation would overdraw against the excess.
+	 *
+	 * <p>Reaching it means a Transfer settled or was released twice, or against a reservation
+	 * another Transfer had already consumed — a caller's mistake rather than a request an
+	 * operator made, which is why it is not an {@link InsufficientFundsException}.
+	 */
+	private Money withinTheReservedAmount(Money amount) {
+		if (reservedAmount.isLessThan(amount)) {
+			throw new IllegalArgumentException(
+					"reserved amount %s does not cover %s".formatted(reservedAmount, amount));
+		}
+		return amount;
+	}
 }

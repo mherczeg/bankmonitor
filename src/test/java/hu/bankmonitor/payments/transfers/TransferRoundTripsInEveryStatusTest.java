@@ -43,10 +43,14 @@ class TransferRoundTripsInEveryStatusTest {
 	@Autowired
 	private TestEntityManager entityManager;
 
+	/**
+	 * Writing a Transfer is {@link TransferRepository}'s and reading one back is
+	 * {@link TransferQueries}', so a round trip needs both halves and the fields are named
+	 * for which half they are.
+	 */
 	@Autowired
-	private TransferRepository transfers;
+	private TransferRepository writtenTransfers;
 
-	/** The read side is a separate interface; {@link TransferQueries} says why. */
 	@Autowired
 	private TransferQueries storedTransfers;
 
@@ -62,7 +66,7 @@ class TransferRoundTripsInEveryStatusTest {
 	@Test
 	@DisplayName("a requested Transfer is PENDING from the moment it was requested")
 	void isPendingFromTheMomentItWasRequested() {
-		Long id = transfers.save(pendingTransfer()).getId();
+		Long id = writtenTransfers.save(pendingTransfer()).getId();
 		entityManager.flush();
 		entityManager.clear();
 
@@ -83,7 +87,7 @@ class TransferRoundTripsInEveryStatusTest {
 	@EnumSource(TransferStatus.class)
 	@DisplayName("a Transfer round-trips in each of its statuses, stored by name")
 	void roundTripsInEachStatus(TransferStatus status) {
-		Long id = transfers.save(pendingTransfer()).getId();
+		Long id = writtenTransfers.save(pendingTransfer()).getId();
 
 		advanceTo(id, status);
 		entityManager.clear();
@@ -103,7 +107,7 @@ class TransferRoundTripsInEveryStatusTest {
 	@Test
 	@DisplayName("the debited and the credited amount each get their own pair of columns")
 	void keepsTheTwoAmountsInColumnsOfTheirOwn() {
-		transfers.save(pendingTransfer());
+		writtenTransfers.save(pendingTransfer());
 		entityManager.flush();
 		entityManager.clear();
 

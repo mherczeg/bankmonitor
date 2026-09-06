@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 
 import static hu.bankmonitor.payments.common.Currency.EUR;
@@ -26,9 +27,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * empty ledger — and that is the wrong end to defend alone, because by the time {@code
  * decide} is handed one the Transfer holding an operator's funds already exists.
  *
- * <p>No Spring context: {@link CheckPolicy} is a class with one overridable method and
- * {@link CheckLedgerRepository} declares exactly one, so the two collaborators are a
- * subclass and a lambda.
+ * <p>No Spring context: the two collaborators are a subclass of {@link CheckPolicy} and a
+ * {@link CheckLedgerRepository} whose every method is an assertion failure, which says the
+ * claim exactly — a refused ledger touches the table in no way at all.
  */
 class CheckLedgerTest {
 
@@ -52,8 +53,22 @@ class CheckLedgerTest {
 	}
 
 	private static CheckLedgerRepository noRowMayBeWritten() {
-		return entry -> {
-			throw new AssertionError("a refused ledger writes no rows at all");
+		return new CheckLedgerRepository() {
+
+			@Override
+			public CheckLedgerEntry save(CheckLedgerEntry entry) {
+				throw new AssertionError("a refused ledger writes no rows at all");
+			}
+
+			@Override
+			public List<CheckLedgerEntry> findAllByTransferId(Long transferId) {
+				throw new AssertionError("opening a ledger reads none");
+			}
+
+			@Override
+			public int answer(Long transferId, Check check, Verdict verdict) {
+				throw new AssertionError("opening a ledger answers nothing");
+			}
 		};
 	}
 

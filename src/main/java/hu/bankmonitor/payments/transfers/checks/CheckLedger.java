@@ -5,12 +5,20 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
 /**
  * The per-Transfer record of which Checks it requires and how each has been answered, and
- * the one operation this package exports today: opening that record.
+ * the two operations this package exports: opening that record, and answering one Check in
+ * it.
+ *
+ * <p>The two are the ledger's whole life and they are deliberately the only ways into it.
+ * Every row a Transfer will ever have is written by {@link #openFor}, and the only thing
+ * that happens to one afterwards is {@link #record} filling in its Verdict — there is no way
+ * to add a row, remove one, or answer the same Check twice, which is what lets
+ * {@link LedgerDecision#decide} read the rows as the whole truth about the Transfer.
  *
  * <p>The whole of what the Check Ledger is for rests on it being written <em>with</em> the
  * Transfer. A Transfer whose rows were written afterwards has a window in which it is
@@ -67,5 +75,50 @@ public class CheckLedger {
 		for (Check check : required) {
 			entries.save(CheckLedgerEntry.outstanding(transferId, check));
 		}
+	}
+
+	/**
+	 * Answers one outstanding Check and says what the whole ledger then supports, in the
+	 * caller's transaction.
+	 *
+	 * <p>The answer is written by {@linkplain CheckLedgerRepository#answer a guarded update}
+	 * rather than a read followed by a write, so two deliveries of the same Verdict leave one
+	 * answer. A second delivery matching no row is not a refusal: nothing went wrong on the
+	 * reporting side, and the caller still needs the decision back, because the delivery that
+	 * did win may have been lost on the way home. What it does mean is that the decision here
+	 * is made over what the ledger <em>holds</em>, never over the Verdict just handed in.
+	 *
+	 * <p><b>The rows are read after the update, and nothing may have read them before it.</b>
+	 * A bulk update goes straight to the database and leaves the persistence context alone,
+	 * so an entry loaded earlier in the same transaction would come back from
+	 * {@link CheckLedgerRepository#findAllByTransferId} still carrying its old, unanswered
+	 * Verdict — and a ledger whose last outstanding row looks outstanding decides {@code
+	 * WAIT}, leaving a fully approved Transfer pending for ever. This is the only method that
+	 * reads the rows, and it reads them here.
+	 *
+	 * <p>{@link Propagation#MANDATORY} for {@link #openFor}'s reason turned around: the
+	 * decision returned here is acted on by moving money, and an answer committed separately
+	 * from the movement it authorises is either a settled Transfer nobody paid or a payment
+	 * against a ledger that does not record why.
+	 *
+	 * @return what the Transfer's ledger now supports, which the caller owns acting on
+	 * @throws org.springframework.transaction.IllegalTransactionStateException if the caller
+	 *                                                                         has no
+	 *                                                                         transaction
+	 *                                                                         open
+	 * @throws CheckNotRequiredException if the Transfer's ledger has no row for that Check
+	 * @throws IllegalArgumentException  if the Transfer has no ledger at all, which
+	 *                                   {@link LedgerDecision#decide} refuses rather than
+	 *                                   settles
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public LedgerDecision record(long transferId, Check check, Verdict verdict) {
+		int answered = entries.answer(transferId, check, verdict);
+		List<CheckLedgerEntry> ledger = entries.findAllByTransferId(transferId);
+
+		if (answered == 0 && ledger.stream().noneMatch(entry -> entry.isFor(check))) {
+			throw new CheckNotRequiredException(transferId, check);
+		}
+		return LedgerDecision.decide(ledger);
 	}
 }

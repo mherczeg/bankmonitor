@@ -35,16 +35,27 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class NothingButTheReservationCreatesATransferTest {
 
 	/**
-	 * By dependency rather than by call, because {@link TransferRepository} has exactly one
-	 * write method and a class that holds the repository at all is one edit away from
-	 * calling it.
+	 * By dependency rather than by call, because {@link TransferRepository} holds nothing but
+	 * the write and a class that holds the interface at all is one edit away from calling it.
 	 *
-	 * <p>That strictness is what {@link TransferQueries} exists to pay for. Ticket 15 gave
-	 * the slice a read side, and rather than exempt it here — which would have conceded the
-	 * "one edit away" margin, and again for each later reader — the reads went onto an
-	 * interface of their own that does not declare {@code save}. So this rule still names
-	 * one class and still forbids the dependency outright, and a reader cannot write a
-	 * Transfer because it cannot name the method that would.
+	 * <p><b>Which is what every other interface over {@link Transfer} exists to pay for.</b>
+	 * Matching by type survives methods being <em>added</em> to a repository — but not a
+	 * second class <em>calling</em> them, and each ticket that gave the slice a new reason to
+	 * touch a Transfer was exactly that. Ticket 15 brought reads and they went to
+	 * {@link TransferQueries}; ticket 20 brought the lock and the guarded transition and they
+	 * went to {@link TransferTransitions}. Each time the alternative was to exempt the new
+	 * class here, conceding the "one edit away" margin and conceding it again for the next
+	 * one. Naming {@code save} in the rule instead is what ticket 19 rejected, and an
+	 * allow-list of permitted classes is a structural claim degraded into a list every later
+	 * ticket appends to.
+	 *
+	 * <p>So the axis is not read against write, which is what ticket 15 assumed when it
+	 * expected the transition update to land beside {@code save}. It is restricted against
+	 * unrestricted. Creating a Transfer is restricted because one written anywhere else would
+	 * be {@code PENDING} against an empty Check Ledger; advancing one is not, because the
+	 * guard travels with the statement. This rule still names one class and still forbids the
+	 * dependency outright, and no reader or settler can write a Transfer because none of them
+	 * can name the method that would.
 	 */
 	private static final ArchRule ONLY_THE_RESERVATION_WRITES_A_TRANSFER = noClasses()
 			.that().doNotHaveFullyQualifiedName(FundsReservation.class.getName())

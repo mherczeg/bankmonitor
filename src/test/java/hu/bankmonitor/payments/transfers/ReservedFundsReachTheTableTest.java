@@ -23,7 +23,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.type;
  * held against a request that does not exist, so every refusal below reads the tables back to
  * show that neither happened.
  */
-class ReservedFundsReachTheTableTest extends ReservationScenario {
+class ReservedFundsReachTheTableTest extends TransferScenario {
 
 	private static final long SOURCE = 1L;
 	private static final long DESTINATION = 2L;

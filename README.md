@@ -92,15 +92,15 @@ build.
 
 ## What is built so far
 
-Tickets 01–13, 16 and 31–33 of 44: the skeleton, schema management, the package structure
+Tickets 01–13, 16 and 31–34 of 44: the skeleton, schema management, the package structure
 the domain code will be written into, the security chain in front of it, the error contract
 every endpoint will answer with, the value type every amount in the system is expressed in
 and the single conversion between currencies, the first entity and the first table, the
 first endpoint that writes to it and the first that reads it back, the Transfer and the
 locking rule the concurrency design rests on, the reservation that rule protects, the claim
 on an Idempotency Key, the frontend's shell, the generated API types that join the two
-halves, the frontend edge that turns Minor Units into decimals, and the two ecosystem bets
-that had to be settled first.
+halves, the frontend edge that turns Minor Units into decimals, the reading an operator
+gets of a failed request, and the two ecosystem bets that had to be settled first.
 **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
@@ -293,6 +293,15 @@ rather than an intention.
 **One error does not pass through here:** a refusal from the security filter chain is
 raised before the dispatcher and answered with an empty body. Nothing is denied on
 purpose yet; see the TODO list.
+
+**The client half of the rule is `frontend/src/api/problem.ts`**, which maps a URN to a
+title, a body and whether retrying will help — and reads no other member of the document,
+asserted against its own source rather than left as an intention. It is where the two
+`409`s stop being the same news: one advises waiting and trying again, the other says a
+retry can never succeed. The wording is the frontend's own, because a document's `title`
+is a status reason phrase and its `detail` is written for whoever is reading the response,
+neither of which an operator can act on. [The frontend README](frontend/README.md#what-an-operator-is-told-when-a-request-fails)
+has the surface.
 
 ## The frontend's types are generated, not written
 

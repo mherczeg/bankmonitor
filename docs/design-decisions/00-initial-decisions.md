@@ -527,6 +527,9 @@ distinguished by their `type` URN (`urn:problem:request-in-progress` vs
 > **[Ticket 32](32-openapi-type-generation.md)** found that none of this reaches
 > `/v3/api-docs` unaided — the advice produces it, so springdoc has nothing to
 > introspect — and publishes the URNs and the document's shape from the enum.
+> **[Ticket 34](34-problem-document-module.md)** builds the client half the rule
+> was written for, and keeps it from eroding: the frontend's mapping may not name
+> a status code, asserted against its own source.
 
 ---
 
@@ -751,6 +754,9 @@ render — deterministically, with no `waitForTimeout`. True E2E goes to
 > **[Ticket 33](33-money-format-module.md)** built the first module on that list,
 > and made the rule an assertion rather than a convention: `money.test.ts` reads
 > its own subject's source and pins its import list.
+> **[Ticket 34](34-problem-document-module.md)** built the second, keeping this
+> section's signature, and found that its argument has to be `unknown` — a typed
+> parameter would push a cast onto every caller.
 
 ---
 

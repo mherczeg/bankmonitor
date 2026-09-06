@@ -57,7 +57,8 @@ src/
   main.tsx            mounts the router inside the query client, imports Bootstrap once
   routeTree.gen.ts    generated — see below
   money.ts            the decimal form of an amount, in and out — see below
-  api/                the API's types, the query client and its retry rule
+  api/                the API's types, the query client, its retry rule, and how a
+                      failure reads to an operator
   routes/             one file per route; the file tree is the URL tree
 ```
 
@@ -140,6 +141,52 @@ server as a different number than the one submitted.
 Adding a Currency is therefore a one-line change in this file, and the compiler finds
 it: the decimals table is keyed by the generated `Currency` type, so a fourth Currency
 appearing in `schema.gen.ts` fails the build until it has decimals here.
+
+## What an operator is told when a request fails
+
+Every failure of the API arrives as one shape — an RFC 9457 problem document — carrying
+a `type` URN that names what went wrong. **That URN is the only member of it this app
+branches on.** The backend made it the sole discriminator so that no client has to
+reconcile two fields that can disagree, and the two `409`s are the case that makes the
+rule worth having: `urn:problem:request-in-progress` is worth retrying and
+`urn:problem:idempotency-key-reused` never is, and their status codes are identical.
+
+`src/api/problem.ts` is where that vocabulary becomes something readable:
+
+```ts
+problemToMessage(failure): { title, body, retryable }
+```
+
+| Export | Reading it |
+|---|---|
+| `problemToMessage(failure)` | anything a failed request produced → the three fields a screen renders |
+| `UNRECOGNISED_PROBLEM` | what a failure this app has no wording for degrades to |
+| `PROBLEM_TYPES` | the URNs, at runtime — the `ProblemType` type is generated and compile-time only |
+| `ProblemMessage` | the returned shape |
+
+**`retryable` answers "would trying again ever help", which is a question for the person
+reading the screen.** It is not the same question `src/api/retry.ts` answers — whether
+the query client should silently re-send now — and the two deliberately disagree on the
+in-progress `409`: the client must not race the `Retry-After` with a backoff timer of
+its own, and the operator asking whether to try again in a minute is owed a yes.
+
+**The wording is written in that module rather than taken from the document.** A problem
+document's `title` is the status reason phrase (`"Conflict"`) and its `detail` is a
+sentence for whoever is reading the response (`"Invalid request content."`); neither is
+advice an operator can act on. The one server-supplied member the screens do use is
+`errors`, and it goes against the fields it names rather than into a paragraph.
+
+**The argument is `unknown`, on purpose.** A parsed response body is not a
+`ProblemDocument` until something has checked, and typing the parameter would push a
+cast to every call site — the hand-written trust the generated types exist to delete.
+So a gateway's HTML page, a dropped connection and a URN from a backend newer than this
+build all land on the same readable fallback, which advises retrying: the Idempotency
+Key is held across attempts, so the cost of being wrong that way is one click.
+
+Adding a URN on the backend is a compile error here, not a silently unhandled case: the
+message table is a `Record<ProblemType, …>` over the generated union. Ticket 34's design
+record has the argument, including why the module's own source may not contain the word
+*status* — and why a test enforces that.
 
 ## The API types, and when to regenerate them
 

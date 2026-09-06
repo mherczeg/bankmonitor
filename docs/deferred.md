@@ -29,8 +29,16 @@ The backend already reports enough to tell them apart.
 
 **What it would take:** decide whether the payload-mismatch case deserves its
 own status code (`422`) rather than sharing `409`; define client retry policy
-(backoff for in-progress, hard stop for mismatch); surface both distinctly in
-the React error handling.
+(backoff for in-progress, hard stop for mismatch).
+
+**Partly closed by [ticket 34](design-decisions/34-problem-document-module.md).**
+The two cases are now surfaced distinctly: `problemToMessage` tells the operator
+that the in-progress `409` is worth trying again and that the reused key never
+will be. What is still deferred is the *automatic* half — nothing reads
+`Retry-After` and schedules a retry against it; `retry.ts` declines to retry any
+`409` precisely so that it does not race a header it ignores. A client that
+backs off on the header, and only for the in-progress URN, is the remaining
+work.
 
 ---
 

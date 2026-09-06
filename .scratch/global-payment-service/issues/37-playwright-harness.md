@@ -24,10 +24,10 @@ smoke spec proving it works.
 
 **Blocked by:** 31
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Playwright runs headless from a documented command and in a single browser
-- [ ] A helper scripts API responses per test, typed from the generated API types
-- [ ] An init script replaces the browser's event source before app code runs
-- [ ] A smoke spec drives a dispatched message end to end and asserts a re-render
-- [ ] No spec waits on a fixed timeout
+- [x] Playwright runs headless from a documented command and in a single browser
+- [x] A helper scripts API responses per test, typed from the generated API types
+- [x] An init script replaces the browser's event source before app code runs
+- [x] A smoke spec drives a dispatched message end to end and asserts a re-render
+- [x] No spec waits on a fixed timeout

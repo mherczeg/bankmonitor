@@ -45,7 +45,8 @@ changing: the browser still talks only to the dev server, so
 |---|---|
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | regenerates the route tree, type-checks, then bundles to `dist/` |
-| `npm test` | Vitest, once |
+| `npm test` | Vitest, once, over `src/` |
+| `npm run test:browser` | Playwright, headless — starts the dev server itself |
 | `npm run lint` | oxlint |
 | `npm run routes` | regenerates `src/routeTree.gen.ts` on its own |
 | `npm run api-types` | regenerates `src/api/schema.gen.ts` from the running backend |
@@ -190,6 +191,13 @@ message table is a `Record<ProblemType, …>` over the generated union. Ticket 3
 record has the argument, including why the module's own source may not contain the word
 *status* — and why a test enforces that.
 
+**The four ways a requested Transfer is refused** all arrive as `422`, and three of them
+tell the operator that trying again cannot help: both sides naming the same Account, an
+Account that does not exist, and two Accounts in Currencies this service cannot yet convert
+between. `urn:problem:insufficient-funds` is the exception and advises retrying — Available
+Balance is the balance less what other Transfers have reserved, and both figures move on
+their own, so the identical Transfer goes through once a reservation elsewhere releases.
+
 ## The Idempotency Key, and what it identifies
 
 A key identifies **what the operator meant to do**, not an HTTP attempt at doing it.
@@ -328,3 +336,97 @@ it.
 
 Nothing enforces the regeneration — the file is committed and refreshed by hand, so it can
 go stale, and the residual risk is written up in `../docs/deferred.md`.
+
+## The browser tests, and the network they run against
+
+Two test entries, divided by directory. `npm test` is Vitest over `src/` — the pure
+modules above, in Node, no DOM. `npm run test:browser` is Playwright over `e2e/` — a real
+browser, real focus and blur, real navigation, against a network the spec writes.
+
+Both runners collect `*.spec.ts` by default, which is why `npm test` is scoped
+`vitest run --dir src`: unscoped, Vitest picks up the browser specs and fails on
+`@playwright/test`.
+
+```bash
+npm run test:browser              # headless chromium, starts the dev server itself
+npx playwright test --headed      # watch it happen
+npx playwright test --ui          # pick specs, step through, read the trace
+```
+
+The dev server starts and stops with the run, and an already-running one on `5173` is
+reused. **Nothing reaches the backend** — every request the app makes to `/api/` is
+answered by the spec — so these pass with no backend, no database and no seed data. There
+is one browser, because these specs assert what the app does rather than what a rendering
+engine renders, and **no retries**, because every sequence is ordered by the spec rather
+than by a timer and a spec that only passes on the second attempt has a race in it.
+
+### Scripting the API
+
+Specs import from `e2e/harness/test`, which is Playwright's `test` with the two
+substitutions every spec here wants already made: the `api` fixture, and a fake event
+source installed before app code runs.
+
+```ts
+import { anAccount, aProblem, eventStream, expect, test } from '../harness/test'
+
+test('the balance comes from the API', async ({ api, page }) => {
+  api.accounts([anAccount({ id: 1, balanceMinorUnits: 100_50 })])
+
+  await page.goto('/accounts')
+
+  await expect(page.getByTestId('balance-1')).toHaveText('100.50')
+})
+```
+
+| Call | What it scripts |
+|---|---|
+| `api.accounts(accounts)` | what `GET /api/accounts` answers with, from the next request on |
+| `api.transfers(transfers)` | what `GET /api/transfers` answers with |
+| `api.transfer(transfer)` | what `GET /api/transfers/{id}` answers with, at the ID the Transfer carries |
+| `api.refuses(method, path, problem, params?)` | a refusal instead of a success; the document carries its own status |
+| `api.timesAsked(method, path, params?)` | how many times the browser has asked, since the spec began |
+
+**Calling one of these again replaces the answer** rather than adding a second route, which
+is how a spec makes truth change mid-test. A path a spec never scripts answers `404` with a
+`detail` naming the method and path that went unanswered — it does not fall through to a
+real backend, so no spec can pass because a server happened to be running.
+
+Paths are spelled the way the OpenAPI document spells them — `/api/transfers/{id}`, not a
+URL with an ID already in it — and are typed `ApiPath`, so a path the backend renames or
+drops fails `tsc`. Placeholders come from the `params` argument. Fixtures (`anAccount`,
+`aTransfer`, `aProblem`) each return a whole generated shape for the same reason: a member
+the backend adds, drops or renames is a build failure here rather than a spec that passes
+against a shape nobody sends.
+
+### Driving the event stream
+
+`route.fulfill()` takes a complete string or buffer — there is no streaming body — so a
+mock cannot push an event after the page has rendered, which is exactly what a live-update
+assertion needs. So `window.EventSource` is replaced, before app code runs, by a fake the
+spec drives by hand.
+
+```ts
+const stream = await eventStream(page)      // after the page has rendered
+
+await stream.message(JSON.stringify({ type: 'TRANSFER_SETTLED', transferId: 7 }))
+await stream.drop()                         // an error, then connecting
+await stream.reopen()                       // a real one does this on its own timer
+await stream.state()                        // 'connecting' | 'open' | 'closed'
+```
+
+A whole live-update spec is then four ordered steps with nothing waiting on a clock: assert
+the page reads pending, re-script the endpoint so **truth changes**, dispatch a message,
+assert the page reads settled.
+
+**Ask for `eventStream(page)` after the page has rendered**, not before the first
+assertion. React's StrictMode mounts an effect, tears it down and mounts it again, so a
+subscribing component briefly leaves a closed source behind a live one; the helper binds to
+the newest *open* source, which is only reliable once that remount has happened. A dispatch
+on a source the app has already closed throws and names the URL, rather than being ignored
+and spending the spec's timeout.
+
+`e2e/smoke/` holds the one spec that proves the harness itself, against a fixture page that
+exists only because no screen fetches anything yet. It goes when the Transfer page carries
+the same sequence for real. `docs/design-decisions/37-playwright-harness.md` has the
+reasoning and the alternatives that were rejected — including the glob that looks right and
+breaks every spec at once.

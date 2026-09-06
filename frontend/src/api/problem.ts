@@ -64,6 +64,40 @@ const MESSAGES: Record<ProblemType, ProblemMessage> = {
     retryable: false,
   },
 
+  'urn:problem:self-transfer': {
+    title: 'A Transfer needs two different Accounts',
+    body: 'Both sides of this Transfer name the same Account, so there is nothing for it to move. Pick a different Account on one side and submit again.',
+    retryable: false,
+  },
+
+  'urn:problem:unknown-account': {
+    title: 'One of those Accounts does not exist',
+    body: 'An Account named on this Transfer is not one the service holds. Check the identifier against the Accounts list and submit again.',
+    retryable: false,
+  },
+
+  /**
+   * The one refusal of the four that advises retrying. Available Balance is the balance
+   * less what is reserved, and both move on their own: a reservation released elsewhere
+   * makes this same Transfer go through unchanged.
+   */
+  'urn:problem:insufficient-funds': {
+    title: 'The source Account does not have the funds',
+    body: 'Its Available Balance — the balance less what other Transfers have reserved — does not cover this amount. Lower the amount, or try again once those Transfers have settled.',
+    retryable: true,
+  },
+
+  /**
+   * Names a capability this service does not have yet rather than a rule the request
+   * broke, which is why the wording says "yet" and ticket 26 will delete this entry
+   * rather than reword it.
+   */
+  'urn:problem:cross-currency-unsupported': {
+    title: 'The two Accounts are in different Currencies',
+    body: 'This service cannot convert between Currencies yet, so a Transfer has to run between two Accounts holding the same one. Pick Accounts that match.',
+    retryable: false,
+  },
+
   'urn:problem:request-in-progress': {
     title: 'This request is already being processed',
     body: 'An identical request is still running. Wait a moment and try again — it carries the same Idempotency Key, so it cannot go through twice.',

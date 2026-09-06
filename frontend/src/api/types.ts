@@ -1,4 +1,4 @@
-import type { components } from './schema.gen'
+import type { components, paths } from './schema.gen'
 
 /**
  * The API's shapes under the names the app calls them, and the only module that
@@ -28,6 +28,19 @@ export type NewAccount = components['schemas']['CreateAccountRequest']
 /** The three denominations this service quotes, as the backend declares them. */
 export type Currency = Account['currency']
 
+/** One Transfer as the API reports it, in whatever status it has reached. */
+export type Transfer = components['schemas']['TransferResponse']
+
+/** What requesting a Transfer asks for. */
+export type NewTransfer = components['schemas']['CreateTransferRequest']
+
+/**
+ * Where a Transfer has got to. A Transfer leaves `PENDING` exactly once and never
+ * moves again, which is what makes the stream's three terminal events the complete
+ * set — see `events.ts`.
+ */
+export type TransferStatus = Transfer['status']
+
 /** The one shape every failure of the API arrives as (RFC 9457). */
 export type ProblemDocument = components['schemas']['ProblemDocument']
 
@@ -40,3 +53,14 @@ export type ProblemType = components['schemas']['ProblemType']
 
 /** One rejected value, against the field that carried it. */
 export type ValidationError = components['schemas']['ValidationError']
+
+/**
+ * Every path the API publishes, spelled the way the document spells it —
+ * `/api/transfers/{id}`, not a URL with an identifier already in it.
+ *
+ * It exists for the browser harness, which scripts one answer per path: a path
+ * annotated with this type stops compiling the day the backend renames or drops
+ * it, so a mock still answering a URL nothing calls is a build failure rather
+ * than a spec that passes for the wrong reason.
+ */
+export type ApiPath = keyof paths

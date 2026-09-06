@@ -819,6 +819,10 @@ render — deterministically, with no `waitForTimeout`. True E2E goes to
 > signature: `invalidationsFor` takes the frame rather than a parsed message, because
 > a stream's first failure is the parse and a message handler is the worst place to
 > catch it.
+> **[Ticket 37](37-playwright-harness.md)** built the browser half, and holds the
+> scripted answers in one mutable table behind one route handler rather than
+> re-registering a route per answer as step 2 above reads. It also names the glob that
+> swallows the app's own `src/api/` modules, reproduced rather than reasoned about.
 
 ---
 
@@ -919,6 +923,10 @@ late.
 > **Built in [ticket 32](32-openapi-type-generation.md)**, which found that the
 > document springdoc publishes unaided describes neither the errors nor which
 > response members are always sent, and closed both on the backend first.
+>
+> **Regenerated in [ticket 37](37-playwright-harness.md)**, which is where "it goes
+> stale" stopped being a caveat and became four compile errors — the exhaustiveness
+> working, and priced.
 
 ---
 

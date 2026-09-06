@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/api/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listTransfers"];
+        put?: never;
+        post: operations["requestTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts": {
         parameters: {
             query?: never;
@@ -20,10 +36,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/transfers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["fetchTransfer"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CreateTransferRequest: {
+            /** Format: int64 */
+            fromAccountId: number;
+            /** Format: int64 */
+            toAccountId: number;
+            /** Format: int64 */
+            amountMinorUnits: number;
+        };
+        TransferResponse: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            fromAccountId: number;
+            /** Format: int64 */
+            toAccountId: number;
+            /** @enum {string} */
+            status: "PENDING" | "SETTLED" | "REJECTED" | "EXPIRED";
+            /** Format: int64 */
+            debitedAmountMinorUnits: number;
+            /** @enum {string} */
+            debitedAmountCurrency: "EUR" | "USD" | "HUF";
+            /** Format: int64 */
+            creditedAmountMinorUnits: number;
+            /** @enum {string} */
+            creditedAmountCurrency: "EUR" | "USD" | "HUF";
+            /** Format: date-time */
+            createdAt: string;
+        };
         CreateAccountRequest: {
             /** @enum {string} */
             currency: "EUR" | "USD" | "HUF";
@@ -46,7 +106,7 @@ export interface components {
          * @description The URN a client branches on, and the only member of the document it may branch on.
          * @enum {string}
          */
-        ProblemType: "urn:problem:validation-failed" | "urn:problem:malformed-request" | "urn:problem:unsupported-media-type" | "urn:problem:method-not-allowed" | "urn:problem:not-found" | "urn:problem:request-in-progress" | "urn:problem:idempotency-key-reused" | "urn:problem:fx-provider-unavailable" | "urn:problem:client-error" | "urn:problem:internal-error";
+        ProblemType: "urn:problem:validation-failed" | "urn:problem:malformed-request" | "urn:problem:unsupported-media-type" | "urn:problem:method-not-allowed" | "urn:problem:not-found" | "urn:problem:self-transfer" | "urn:problem:unknown-account" | "urn:problem:insufficient-funds" | "urn:problem:cross-currency-unsupported" | "urn:problem:request-in-progress" | "urn:problem:idempotency-key-reused" | "urn:problem:fx-provider-unavailable" | "urn:problem:client-error" | "urn:problem:internal-error";
         /** @description A single rejected value, against the field that carried it. */
         ValidationError: {
             field: string | null;
@@ -71,6 +131,72 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listTransfers: {
+        parameters: {
+            query?: {
+                status?: "PENDING" | "SETTLED" | "REJECTED" | "EXPIRED";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["TransferResponse"][];
+                };
+            };
+            /** @description A problem document, named by its type URN. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDocument"];
+                };
+            };
+        };
+    };
+    requestTransfer: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["TransferResponse"];
+                };
+            };
+            /** @description A problem document, named by its type URN. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDocument"];
+                };
+            };
+        };
+    };
     listAccounts: {
         parameters: {
             query?: never;
@@ -120,6 +246,37 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["AccountResponse"];
+                };
+            };
+            /** @description A problem document, named by its type URN. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDocument"];
+                };
+            };
+        };
+    };
+    fetchTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["TransferResponse"];
                 };
             };
             /** @description A problem document, named by its type URN. */

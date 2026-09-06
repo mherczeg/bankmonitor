@@ -8,7 +8,8 @@
     "build": "npm run routes && tsc -b && vite build",
     "routes": "tsr generate",
     "api-types": "openapi-typescript ${BACKEND_URL:-http://localhost:8080}/v3/api-docs --output src/api/schema.gen.ts",
-    "test": "vitest run",
+    "test": "vitest run --dir src",
+    "test:browser": "playwright test",
     "lint": "oxlint",
     "preview": "vite preview"
   },
@@ -20,6 +21,7 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tanstack/router-cli": "^1.167.33",
     "@tanstack/router-plugin": "^1.168.35",
     "@types/node": "^24.13.3",

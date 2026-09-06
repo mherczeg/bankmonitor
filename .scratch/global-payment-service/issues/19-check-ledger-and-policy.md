@@ -23,11 +23,11 @@ inside a service that also touches the database is not testable at all.
 
 **Blocked by:** 11, 13
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The check ledger table ships as this slice's migration
-- [ ] The policy writes ledger rows in the Transfer's own transaction
-- [ ] A Transfer with no ledger rows is impossible to create
-- [ ] `decide` is a pure function over ledger rows, with no repository or clock
-- [ ] Unit tests cover all-approved, one-rejected, mixed, and none-answered — no Spring
+- [x] The check ledger table ships as this slice's migration
+- [x] The policy writes ledger rows in the Transfer's own transaction
+- [x] A Transfer with no ledger rows is impossible to create
+- [x] `decide` is a pure function over ledger rows, with no repository or clock
+- [x] Unit tests cover all-approved, one-rejected, mixed, and none-answered — no Spring
       context

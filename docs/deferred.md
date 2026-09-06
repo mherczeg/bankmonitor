@@ -481,3 +481,23 @@ patterns are real.
 transfers — offset pagination skips and duplicates rows when new transfers are
 inserted while a user pages, which for a list that grows at the head is the
 common case, not the edge case.
+
+---
+
+## Which Checks a Transfer requires is compiled in
+
+**Deferred.** `CheckPolicy` names the required Checks in code, so every Transfer
+requires the same two and changing that is a deploy.
+
+**Why deferred:** the policy is a seam, not a placeholder — it takes the Transfer
+and returns a set, so the first conditional rule ("manual approval above ten
+thousand") is a line inside it and nothing downstream changes. What is deferred is
+only the *source* of the answer, and configuring it before there is a second
+answer to configure would be a table, an admin surface and a cache standing in for
+one `EnumSet`.
+
+**What it would take:** a rules table keyed on the dimensions that actually drive
+the decision (amount band, currency pair, destination), read under the same
+transaction as the Transfer so a policy change cannot land between the two writes.
+The ledger and the decision function need no change: they count rows and do not
+know how many there ought to be.

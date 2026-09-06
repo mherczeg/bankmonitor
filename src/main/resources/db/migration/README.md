@@ -54,6 +54,12 @@ and fails `validate` at startup. Pin the mapping with `@JdbcTypeCode(SqlTypes.VA
 the component rather than writing an H2-specific type here; this schema still has to
 survive the move to Postgres. `RecordAsEmbeddableSpikeTest` holds the evidence.
 
+**Reserved words bite at `create table`, not at runtime.** `check` is one, so a
+column of that name fails the migration outright — `V4__check_ledger.sql` calls its
+column `required_check`, and the entity's field is named to produce that rather
+than quoted into submission. A quoted identifier survives here and then has to be
+repeated, quoted, in every hand-written query that touches it.
+
 **Never write `in (…)` in a `check` constraint.** H2 compiles a constant `in` list into a
 set ordered by *the session that parsed the DDL*, and evaluating the constraint later asks
 that session for its comparison mode. Flyway's connection is closed by then, so every
@@ -68,6 +74,11 @@ Write `status = any (array['PENDING', 'SETTLED', 'REJECTED', 'EXPIRED'])` instea
 `V2__transfers.sql` does: it survives the connection closing, reads almost exactly like
 `in`, and is a shape Postgres takes too. A single `=`, a `between` and a column-to-column
 comparison are all safe as well, which is why `V1__accounts.sql` never met this.
+
+A nullable column takes `verdict is null or verdict = any (array[…])`, as
+`V4__check_ledger.sql` does. The `or` there is with an `is null` and not with a second
+equality, so it is not the chain that folds into a set — but the way to be sure of that is
+a test that a bad value is *refused*, not one that a good row goes in.
 
 Design decision 29 has the reasoning behind all of this, and the alternatives that were
 rejected, for as long as those files are around; ticket 11's record has every constraint

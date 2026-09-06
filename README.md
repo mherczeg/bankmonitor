@@ -92,16 +92,16 @@ build.
 
 ## What is built so far
 
-Tickets 01–13, 16 and 31–34 of 44: the skeleton, schema management, the package structure
-the domain code will be written into, the security chain in front of it, the error contract
-every endpoint will answer with, the value type every amount in the system is expressed in
-and the single conversion between currencies, the first entity and the first table, the
-first endpoint that writes to it and the first that reads it back, the Transfer and the
-locking rule the concurrency design rests on, the reservation that rule protects, the claim
-on an Idempotency Key, the frontend's shell, the generated API types that join the two
-halves, the frontend edge that turns Minor Units into decimals, the reading an operator
-gets of a failed request, and the two ecosystem bets that had to be settled first.
-**Both bets won.**
+Tickets 01–13, 16–19 and 31–34 of 44: the skeleton, schema management, the package
+structure the domain code will be written into, the security chain in front of it, the error
+contract every endpoint will answer with, the value type every amount in the system is
+expressed in and the single conversion between currencies, the first entity and the first
+table, the first endpoint that writes to it and the first that reads it back, the Transfer
+and the locking rule the concurrency design rests on, the reservation that rule protects,
+the claim on an Idempotency Key, the Check Ledger a Transfer has to clear before it
+settles, the frontend's shell, the generated API types that join the two halves, the
+frontend edge that turns Minor Units into decimals, the reading an operator gets of a
+failed request, and the two ecosystem bets that had to be settled first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type
@@ -199,6 +199,31 @@ guards is checked would leave a suite that passes and a race in production. It i
 only because the Exchange Rate is fetched in a phase of its own before any of this: a
 transaction holding row locks must never be waiting on a slow provider, and an ArchUnit
 rule walks everything reachable from the locking operation to keep it that way.
+
+**A Transfer is written with the Check Ledger it has to clear, in one transaction.** The
+Check Ledger is one row per Check the Transfer requires — fraud screening, manual
+approval — each recording that Check and how it has been answered, and a Check that has
+not answered has no verdict rather than a third kind of verdict. This is the record that
+makes *why is this transfer still pending* a question with an answer: the outstanding rows
+are the answer, and the same rows are the audit trail and the pending-state screen.
+Because they are written in the Transfer's own transaction, a `PENDING` Transfer with an
+empty ledger — one nothing would ever settle, reject or explain, holding reserved funds
+until a person noticed — cannot exist. The operation that writes them refuses to run
+outside a transaction and refuses to open a ledger with no Checks in it, and an ArchUnit
+rule holds that a Transfer comes into being in exactly one place, so that is a property of
+the design rather than of the one path that exists today.
+
+What follows from the ledger is a **pure function of it**: no repository, no clock, no
+Transfer. Settle when nothing is outstanding and nothing rejected, reject on the first
+rejection, otherwise wait — and **a rejection wins immediately**, because once one Check
+has said no, nothing the outstanding ones could say would revive the Transfer and waiting
+for them holds an operator's money against a decided outcome. An empty ledger is refused
+rather than settled: it satisfies "nothing outstanding, nothing rejected" only because
+nobody checked anything. Adding a condition to this gateway is a constant, a line in the
+policy and a row in the ledger — no new endpoint, no new state, and nothing in the
+settlement rule to revisit. **That extensibility is the whole reason the lifecycle is
+asynchronous**, and it is argued in
+[ADR-0001](docs/adr/0001-asynchronous-transfer-lifecycle.md).
 
 **Virtual threads are on** (`spring.threads.virtual.enabled=true`), and they are
 load-bearing rather than a nicety. The stand-in Exchange Rate provider is a real HTTP

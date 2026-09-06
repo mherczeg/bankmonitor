@@ -248,6 +248,11 @@ seam.
 Verdicts must be idempotent — a check reporting `APPROVED` twice must not
 advance anything twice. Same conditional update as §5.
 
+> **Built in [ticket 19](19-check-ledger-and-policy.md)**, which records why the
+> `status` column above became a nullable `verdict` — an unanswered check has no
+> verdict rather than a third one — and why the decision function refuses an
+> empty ledger instead of settling it.
+
 ---
 
 ## 9. Verdicts arrive by inbound HTTP callback

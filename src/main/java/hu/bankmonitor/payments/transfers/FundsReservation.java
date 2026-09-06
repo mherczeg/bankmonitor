@@ -3,6 +3,7 @@ package hu.bankmonitor.payments.transfers;
 import hu.bankmonitor.payments.accounts.AccountLocking;
 import hu.bankmonitor.payments.accounts.LockedAccounts;
 import hu.bankmonitor.payments.common.Money;
+import hu.bankmonitor.payments.transfers.checks.CheckLedger;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,7 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
  * <li>lock both Accounts, ascending by ID, which {@link AccountLocking} owns;
  * <li><em>then</em> read the source Account's Available Balance and test the amount against
  * it;
- * <li>write the reservation and the Transfer.
+ * <li>write the reservation, the Transfer, and the Check Ledger the Transfer will be
+ * settled or rejected against.
  * </ol>
  *
  * <p>Because the check follows the lock, the figure it tests against cannot be invalidated
@@ -52,9 +54,12 @@ class FundsReservation {
 
 	private final TransferRepository transfers;
 
-	FundsReservation(AccountLocking accounts, TransferRepository transfers) {
+	private final CheckLedger ledger;
+
+	FundsReservation(AccountLocking accounts, TransferRepository transfers, CheckLedger ledger) {
 		this.accounts = accounts;
 		this.transfers = transfers;
+		this.ledger = ledger;
 	}
 
 	/**
@@ -65,6 +70,12 @@ class FundsReservation {
 	 * AccountLocking}'s mandatory propagation is checking for. Ticket 16 will widen it to
 	 * carry the idempotency record's flip to {@code SUCCEEDED} in the same commit, per
 	 * design decision 4.
+	 *
+	 * <p>The Check Ledger is opened last because its rows point at the Transfer's ID, and
+	 * inside the same transaction because a {@code PENDING} Transfer with an empty Check
+	 * Ledger is one nothing will ever settle, expire or explain. {@link CheckLedger#openFor}
+	 * refuses to run without a transaction, and refuses to open a ledger with no Checks in
+	 * it, so the ordering is the only part of that left here.
 	 *
 	 * @throws hu.bankmonitor.payments.accounts.UnknownAccountException  if either Account ID
 	 *                                                                  has no row
@@ -82,7 +93,9 @@ class FundsReservation {
 
 		locked.source().reserve(amount);
 
-		return transfers.save(new Transfer(request.sourceAccountId(), request.destinationAccountId(),
-				amount, amount, request.requestedAt()));
+		Transfer requested = transfers.save(new Transfer(request.sourceAccountId(),
+				request.destinationAccountId(), amount, amount, request.requestedAt()));
+		ledger.openFor(requested);
+		return requested;
 	}
 }

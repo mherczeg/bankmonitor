@@ -38,11 +38,13 @@ abstract class ReservationScenario extends BootedApplicationTest {
 	FundsReservation reservation;
 
 	@Autowired
-	private JdbcTemplate database;
+	JdbcTemplate database;
 
+	/** Ledger first, then Transfers, then Accounts: each table points at the one below it. */
 	@BeforeEach
 	@AfterEach
-	void emptyTheTransferAndAccountTables() {
+	void emptyTheLedgerTransferAndAccountTables() {
+		database.update("DELETE FROM check_ledger");
 		database.update("DELETE FROM transfers");
 		database.update("DELETE FROM accounts");
 	}
@@ -85,6 +87,10 @@ abstract class ReservationScenario extends BootedApplicationTest {
 
 	List<Map<String, Object>> transferRows() {
 		return database.queryForList("SELECT * FROM transfers ORDER BY id");
+	}
+
+	List<Map<String, Object>> checkLedgerRows() {
+		return database.queryForList("SELECT * FROM check_ledger ORDER BY id");
 	}
 
 	private long minorUnitsOf(String column, long accountId) {

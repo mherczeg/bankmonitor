@@ -80,11 +80,20 @@ does not name, which is a caller asking for something that does not exist, and
 meant to *read* arrives with the shared secret on the internal Verdict endpoint,
 and the decision belongs with it.
 
-**What it would take:** an `AuthenticationEntryPoint` and an
-`AccessDeniedHandler` on the chain that write the same document through the same
-`ProblemType` vocabulary. The advice already rethrows `AccessDeniedException`
-rather than answering it, so that translation stays where it can see the
-security context.
+**Closed by [ticket 21](design-decisions/21-internal-verdict-endpoint.md).** The
+shared secret arrived and with it the population this entry was waiting for: an
+operator wiring a Check service against the wrong value, who has to act on the
+response and has nothing else to go on. `DeniedAsAProblemDocument` sits on the
+chain as both the `AuthenticationEntryPoint` and the `AccessDeniedHandler` this
+entry predicted, writing one `urn:problem:forbidden` document for either half of
+the refusal contract. `SecurityChainTest` now asserts the document rather than
+the status, so the denial the chain gives an unnamed path is the same one it
+gives a wrong secret.
+
+One refusal still answers with a bare status, and on purpose: a CORS preflight
+from an unlisted origin is written by `CorsFilter` ahead of the authorization
+filter, and telling "this origin may not ask" apart from "this caller may not
+have it" is what a browser needs from those two `403`s.
 
 ---
 

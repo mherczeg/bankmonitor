@@ -33,10 +33,15 @@ export interface ProblemMessage {
 }
 
 /**
- * The three refusals that are this app calling the API wrongly rather than the operator
+ * The four refusals that are this app calling the API wrongly rather than the operator
  * entering something wrong. They share their copy because they are one situation to the
  * person reading them, and they keep separate entries because a shared default is how a
  * URN added later would silently inherit advice nobody chose for it.
+ *
+ * `urn:problem:forbidden` is one of them because of where it can arrive from: the public
+ * API takes no credential, so the only way this app meets it is by asking for a path
+ * outside `/api` — a wrong base URL or a route this app should not have built. That is a
+ * malformed request by another name, and no credential entered on any screen would fix it.
  *
  * `urn:problem:client-error` is deliberately not one of them, though it looks like it
  * should be — see `docs/design-decisions/34-problem-document-module.md`.
@@ -44,6 +49,22 @@ export interface ProblemMessage {
 const APP_SENT_SOMETHING_WRONG: ProblemMessage = {
   title: 'This app sent a request the service refused',
   body: 'The refusal is in how the request was formed, not in anything entered on this screen, so there is nothing here to correct. Reloading the page is worth one attempt; if it comes back, it needs reporting.',
+  retryable: false,
+}
+
+/**
+ * The two refusals only the internal Verdict endpoint answers with. A Check service
+ * reports a Verdict; this app never does, so neither can arrive from anything an operator
+ * did here.
+ *
+ * They are in the table because it is exhaustive over the generated union by design — a
+ * URN the backend can emit and this app has no wording for is a blank screen — and not
+ * because a screen is expected to show them. See
+ * `docs/design-decisions/21-internal-verdict-endpoint.md`.
+ */
+const NOT_A_REFUSAL_THIS_APP_CAN_CAUSE: ProblemMessage = {
+  title: 'The service refused something this app did not ask for',
+  body: 'This refusal belongs to an endpoint this app never calls, so nothing on this screen caused it and nothing here will clear it. It needs reporting.',
   retryable: false,
 }
 
@@ -63,6 +84,8 @@ const MESSAGES: Record<ProblemType, ProblemMessage> = {
     body: 'What was asked for does not exist — it may have been removed, or the address may be wrong. Go back to the list and pick it again.',
     retryable: false,
   },
+
+  'urn:problem:forbidden': APP_SENT_SOMETHING_WRONG,
 
   'urn:problem:self-transfer': {
     title: 'A Transfer needs two different Accounts',
@@ -97,6 +120,9 @@ const MESSAGES: Record<ProblemType, ProblemMessage> = {
     body: 'This service cannot convert between Currencies yet, so a Transfer has to run between two Accounts holding the same one. Pick Accounts that match.',
     retryable: false,
   },
+
+  'urn:problem:check-not-required': NOT_A_REFUSAL_THIS_APP_CAN_CAUSE,
+  'urn:problem:transfer-not-pending': NOT_A_REFUSAL_THIS_APP_CAN_CAUSE,
 
   'urn:problem:request-in-progress': {
     title: 'This request is already being processed',

@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/internal/transfers/{transferId}/checks/{check}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reportVerdict"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transfers": {
         parameters: {
             query?: never;
@@ -56,6 +72,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        VerdictReport: {
+            /** @enum {string} */
+            verdict: "APPROVED" | "REJECTED";
+        };
+        VerdictReceipt: {
+            /** Format: int64 */
+            transferId: number;
+            /** @enum {string} */
+            check: "FRAUD" | "MANUAL_APPROVAL";
+            /** @enum {string} */
+            verdict: "APPROVED" | "REJECTED";
+            /** @enum {string} */
+            transferStatus: "PENDING" | "SETTLED" | "REJECTED" | "EXPIRED";
+        };
         CreateTransferRequest: {
             /** Format: int64 */
             fromAccountId: number;
@@ -106,7 +136,7 @@ export interface components {
          * @description The URN a client branches on, and the only member of the document it may branch on.
          * @enum {string}
          */
-        ProblemType: "urn:problem:validation-failed" | "urn:problem:malformed-request" | "urn:problem:unsupported-media-type" | "urn:problem:method-not-allowed" | "urn:problem:not-found" | "urn:problem:self-transfer" | "urn:problem:unknown-account" | "urn:problem:insufficient-funds" | "urn:problem:cross-currency-unsupported" | "urn:problem:request-in-progress" | "urn:problem:idempotency-key-reused" | "urn:problem:fx-provider-unavailable" | "urn:problem:client-error" | "urn:problem:internal-error";
+        ProblemType: "urn:problem:validation-failed" | "urn:problem:malformed-request" | "urn:problem:unsupported-media-type" | "urn:problem:method-not-allowed" | "urn:problem:not-found" | "urn:problem:forbidden" | "urn:problem:self-transfer" | "urn:problem:unknown-account" | "urn:problem:insufficient-funds" | "urn:problem:cross-currency-unsupported" | "urn:problem:check-not-required" | "urn:problem:transfer-not-pending" | "urn:problem:request-in-progress" | "urn:problem:idempotency-key-reused" | "urn:problem:fx-provider-unavailable" | "urn:problem:client-error" | "urn:problem:internal-error";
         /** @description A single rejected value, against the field that carried it. */
         ValidationError: {
             field: string | null;
@@ -131,6 +161,42 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    reportVerdict: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transferId: number;
+                check: "FRAUD" | "MANUAL_APPROVAL";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerdictReport"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["VerdictReceipt"];
+                };
+            };
+            /** @description A problem document, named by its type URN. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDocument"];
+                };
+            };
+        };
+    };
     listTransfers: {
         parameters: {
             query?: {

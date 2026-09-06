@@ -1,5 +1,6 @@
 package hu.bankmonitor.payments;
 
+import hu.bankmonitor.payments.common.ProblemType;
 import hu.bankmonitor.testsupport.BootedApplicationTest;
 import hu.bankmonitor.testsupport.ThreadProbeController;
 import org.junit.jupiter.api.DisplayName;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.userdetails.UserDetailsService;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -75,12 +77,22 @@ class SecurityChainTest extends BootedApplicationTest {
 		assertThat(context.getBeanNamesForType(UserDetailsService.class)).isEmpty();
 	}
 
+	/**
+	 * Ticket 21 gave the denial a body. Until then it was an empty {@code 403}, which
+	 * answered "you asked for something that is not here" completely; the shared secret
+	 * produces the first refusal a client is meant to read, and a chain that wrote a document
+	 * for one denial and nothing for the other would be two rules rather than one.
+	 */
 	@Test
-	@DisplayName("a path the chain does not name is denied")
+	@DisplayName("a path the chain does not name is denied as a problem document")
 	void deniesAPathTheChainDoesNotName() {
 		client().get().uri("/not-a-path-the-chain-names")
 				.exchange()
-				.expectStatus().isForbidden();
+				.expectStatus().isForbidden()
+				.expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)
+				.expectBody()
+				.jsonPath("$.type").isEqualTo(ProblemType.FORBIDDEN.urn())
+				.jsonPath("$.instance").isEqualTo("/not-a-path-the-chain-names");
 	}
 
 	/**
@@ -142,16 +154,27 @@ class SecurityChainTest extends BootedApplicationTest {
 					.expectHeader().valueEquals("Access-Control-Expose-Headers", "Retry-After");
 		}
 
-		/** An allow-list that accepted anything would pass every test above. */
+		/**
+		 * An allow-list that accepted anything would pass every test above.
+		 *
+		 * <p>It shares the {@code 403} with an authorization denial and is not one:
+		 * {@code CorsFilter} writes this refusal itself, ahead of the authorization filter and
+		 * of the entry point that turns a denial into a problem document. The body is asserted
+		 * for that reason rather than for its own sake — the two refusals arriving in the same
+		 * shape would mean a browser could not tell "this origin may not ask" from "this
+		 * caller may not have it".
+		 */
 		@Test
-		@DisplayName("a preflight from an unlisted origin is refused")
+		@DisplayName("a preflight from an unlisted origin is refused, and not as a denial")
 		void refusesPreflightFromAnUnlistedOrigin() {
 			client().options().uri(A_PATH_UNDER_THE_PUBLIC_API)
 					.header("Origin", "https://not-our-frontend.example")
 					.header("Access-Control-Request-Method", "GET")
 					.exchange()
 					.expectStatus().isForbidden()
-					.expectHeader().doesNotExist("Access-Control-Allow-Origin");
+					.expectHeader().doesNotExist("Access-Control-Allow-Origin")
+					.expectBody(String.class)
+					.value(body -> assertThat(body).doesNotContain(ProblemType.FORBIDDEN.urn()));
 		}
 
 		/**

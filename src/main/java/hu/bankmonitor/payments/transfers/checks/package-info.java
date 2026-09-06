@@ -20,5 +20,12 @@
  * report one. {@code LedgerDecision.decide} stays package-private, because it is specified
  * over the rows and the rows do not leave. Ticket 22 is where the ledger itself first goes
  * on the wire, and it needs no more than this.
+ *
+ * <p>Ticket 21 widened it by exactly one constructor: {@link
+ * hu.bankmonitor.payments.transfers.checks.CheckNotRequiredException} could always be caught
+ * outside this package and can now be constructed there too, because the controller that maps
+ * it onto a status is in {@code transfers} and so is the test that pins the document. That is
+ * a way to <em>report</em> the refusal, not a way to write a verdict: the rows, the repository
+ * and the policy are all still package-private.
  */
 package hu.bankmonitor.payments.transfers.checks;

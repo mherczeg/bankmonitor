@@ -19,10 +19,10 @@ A separate port for internal traffic is deferred, with its reasoning recorded.
 
 **Blocked by:** 04, 20
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Reporting a Verdict with the correct secret advances the Transfer
-- [ ] A missing or wrong secret is refused before the domain operation is reached
-- [ ] The controller contains no lifecycle logic — it maps a request onto `recordVerdict`
-- [ ] An unknown Transfer or Check returns a problem document
-- [ ] Web-layer tests cover the secret rule and the mapping
+- [x] Reporting a Verdict with the correct secret advances the Transfer
+- [x] A missing or wrong secret is refused before the domain operation is reached
+- [x] The controller contains no lifecycle logic — it maps a request onto `recordVerdict`
+- [x] An unknown Transfer or Check returns a problem document
+- [x] Web-layer tests cover the secret rule and the mapping

@@ -241,6 +241,15 @@ message table is a `Record<ProblemType, …>` over the generated union. Ticket 3
 record has the argument, including why the module's own source may not contain the word
 *status* — and why a test enforces that.
 
+**Some entries in that table are for URNs no screen can produce, and they are not dead
+code.** `urn:problem:check-not-required` and `urn:problem:transfer-not-pending` are
+answered only by the backend's internal Verdict callback, which a browser never calls;
+their wording says so rather than pretending there is something on the screen to correct.
+`urn:problem:forbidden` is reachable, but only by asking for a path outside `/api` — a
+wrong base URL, or a route this app should not have built — so it shares its copy with the
+malformed-request URNs. Exhaustiveness is what makes this visible: a URN the backend can
+emit and the app has no wording for is a blank screen.
+
 **The four ways a requested Transfer is refused** all arrive as `422`, and three of them
 tell the operator that trying again cannot help: both sides naming the same Account, an
 Account that does not exist, and two Accounts in Currencies this service cannot yet convert

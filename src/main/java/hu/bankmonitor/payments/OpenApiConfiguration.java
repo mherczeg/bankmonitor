@@ -9,6 +9,8 @@ import io.swagger.v3.oas.models.media.ObjectSchema;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.media.StringSchema;
 import io.swagger.v3.oas.models.responses.ApiResponse;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -57,6 +59,19 @@ class OpenApiConfiguration {
 	private static final String PROBLEM_MEDIA_TYPE =
 			org.springframework.http.MediaType.APPLICATION_PROBLEM_JSON_VALUE;
 
+	/** What the scheme is called in the document, and the label Swagger UI's Authorize box carries. */
+	private static final String INTERNAL_SECRET_SCHEME = "internalSecret";
+
+	private static final String INTERNAL_PATH_PREFIX = "/internal";
+
+	/**
+	 * The header name is a literal here and again in {@code SharedSecretAuthorization}, on the
+	 * precedent {@code X-Idempotency-Key} sets in {@code SecurityConfiguration}: a constant
+	 * shared across packages would make the description of the API depend on the slice that
+	 * enforces it, and these two files are the only ones that ever say it.
+	 */
+	private static final String INTERNAL_SECRET_HEADER = "X-Internal-Secret";
+
 	@Bean
 	OpenApiCustomizer problemDocuments() {
 		return document -> {
@@ -68,6 +83,48 @@ class OpenApiConfiguration {
 					.forEach(operation ->
 							operation.getResponses().addApiResponse(ANY_OTHER_STATUS, problemResponse()));
 		};
+	}
+
+	/**
+	 * Describes the shared secret, and attaches it to the operations it actually guards.
+	 *
+	 * <p>The internal endpoints are in the published document on purpose. The mock FX provider
+	 * is {@code @Hidden} because it stands in for somebody else's API; this one is ours, and a
+	 * Check service being integrated is exactly the reader the document is for. What it needs
+	 * to be told is that these operations take a credential and the public ones do not — which
+	 * is a per-operation requirement rather than a document-level one, since a document-level
+	 * one would describe the whole API as needing a secret it mostly does not.
+	 *
+	 * <p>Selecting operations by path prefix rather than by an annotation on the controller
+	 * keeps this the same rule the security chain runs: both name {@code /internal}, so an
+	 * endpoint added under it is documented as guarded because it <em>is</em> guarded, rather
+	 * than because somebody remembered the annotation.
+	 */
+	@Bean
+	OpenApiCustomizer internalOperationsCarryTheSecret() {
+		return document -> {
+			document.schemaRequirement(INTERNAL_SECRET_SCHEME, internalSecretScheme());
+			document.getPaths().entrySet().stream()
+					.filter(path -> path.getKey().startsWith(INTERNAL_PATH_PREFIX))
+					.flatMap(path -> path.getValue().readOperations().stream())
+					.forEach(operation -> operation.addSecurityItem(
+							new SecurityRequirement().addList(INTERNAL_SECRET_SCHEME)));
+		};
+	}
+
+	/**
+	 * An {@code apiKey} in a header rather than an {@code http} scheme, because that is what
+	 * it is: there is no registered HTTP authentication scheme for a bare shared secret, and
+	 * describing it as {@code bearer} would send an integrator to send a header this
+	 * application does not read.
+	 */
+	private static SecurityScheme internalSecretScheme() {
+		return new SecurityScheme()
+				.type(SecurityScheme.Type.APIKEY)
+				.in(SecurityScheme.In.HEADER)
+				.name(INTERNAL_SECRET_HEADER)
+				.description("The shared secret a Check service is configured with. "
+						+ "Absent or wrong is the same refusal.");
 	}
 
 	private static Schema<String> problemTypes() {

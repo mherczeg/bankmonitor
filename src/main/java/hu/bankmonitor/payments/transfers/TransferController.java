@@ -76,8 +76,6 @@ class TransferController {
 	private static final String CROSS_CURRENCY_DETAIL =
 			"This service cannot yet convert between the two Accounts' Currencies.";
 
-	private static final String UNKNOWN_TRANSFER_DETAIL = "No Transfer has that identifier.";
-
 	private static final String REQUEST_IN_PROGRESS_DETAIL =
 			"A request with this Idempotency Key is still being processed. Retry with the same key.";
 
@@ -238,21 +236,22 @@ class TransferController {
 	}
 
 	/**
-	 * The one refusal here that is a {@code 404}, and it is the same {@code 404} ticket 05
-	 * settled rather than a second meaning for the status: <em>the path names nothing</em>. The
-	 * identifier <em>is</em> the path, so an identifier no Transfer has addresses no resource.
+	 * The one refusal here that is a {@code 404}, and the only one this class does not write
+	 * itself: {@link UnknownTransferException} is raised on two paths now — a Transfer fetched
+	 * by a client, and a Verdict reported against one by a Check service — so what status that
+	 * fact earns is {@link TransferProblems}'s single decision rather than a copy here and
+	 * another on {@code InternalVerdictController}.
 	 *
-	 * <p>That is what the {@code 422} above it buys. Answering an unknown Account inside a
-	 * payload with {@code 404} too would have given one status two meanings, and a client could
-	 * not have told "that URL does not exist" from "account 900 does not exist" without parsing
-	 * the URN it would then have needed anyway (design decision 14).
+	 * <p>It is the same {@code 404} ticket 05 settled rather than a second meaning for the
+	 * status: <em>the path names nothing</em>, and the identifier <em>is</em> the path. That is
+	 * what the {@code 422} above it buys. Answering an unknown Account inside a payload with
+	 * {@code 404} too would have given one status two meanings, and a client could not have
+	 * told "that URL does not exist" from "account 900 does not exist" without parsing the URN
+	 * it would then have needed anyway (design decision 14).
 	 */
 	@ExceptionHandler
 	ProblemDetail handleUnknownTransfer(UnknownTransferException refusal) {
-		ProblemDetail problem =
-				problemOf(HttpStatus.NOT_FOUND, ProblemType.NOT_FOUND, UNKNOWN_TRANSFER_DETAIL);
-		problem.setProperty("transferId", refusal.getTransferId());
-		return problem;
+		return TransferProblems.unknownTransfer(refusal);
 	}
 
 	/**
@@ -285,29 +284,19 @@ class TransferController {
 				.body(conflictOf(ProblemType.IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_KEY_REUSED_DETAIL));
 	}
 
-	/** The status the four refusals above share, which is the only thing they share. */
-	private static ProblemDetail refusalOf(ProblemType type, String detail) {
-		return problemOf(HttpStatus.UNPROCESSABLE_ENTITY, type, detail);
-	}
-
-	/** The status the two idempotency refusals share, which is likewise all they share. */
-	private static ProblemDetail conflictOf(ProblemType type, String detail) {
-		return problemOf(HttpStatus.CONFLICT, type, detail);
-	}
-
 	/**
-	 * The parts every problem document here shares. {@code instance} is left unset on purpose:
-	 * the message converter fills it in from the request URI for any {@code ProblemDetail} that
-	 * does not name one, so setting it here would be a second copy of the request path to keep
-	 * right.
+	 * The status the four refusals above share, which is the only thing they share.
 	 *
 	 * <p>Every {@code detail} is written in this class rather than taken from the exception, on
 	 * {@code ProblemDocumentAdvice}'s reasoning: an exception message is written for a log, and
 	 * two of these carry {@code Money}, whose {@code toString} is a record's.
 	 */
-	private static ProblemDetail problemOf(HttpStatus status, ProblemType type, String detail) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
-		problem.setType(type.uri());
-		return problem;
+	private static ProblemDetail refusalOf(ProblemType type, String detail) {
+		return TransferProblems.of(HttpStatus.UNPROCESSABLE_ENTITY, type, detail);
+	}
+
+	/** The status the two idempotency refusals share, which is likewise all they share. */
+	private static ProblemDetail conflictOf(ProblemType type, String detail) {
+		return TransferProblems.of(HttpStatus.CONFLICT, type, detail);
 	}
 }

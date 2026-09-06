@@ -316,6 +316,12 @@ Manual approval is not a service — it is a human in a back-office UI reporting
 through the same operation. Automated and human approvers are indistinguishable
 to the orchestrator, which is the generality the model exists for.
 
+> **Built in [ticket 21](21-internal-verdict-endpoint.md)**, which records why
+> the adapter answers `200` with a receipt rather than the `204` a thin adapter
+> suggests — a Check service reporting one of two Checks would otherwise have to
+> fetch the Transfer back to learn what its own Verdict did — and why the request
+> body carries the Verdict alone, the Transfer and the Check being the address.
+
 ---
 
 ## 10. Internal endpoints sit behind a shared secret
@@ -333,6 +339,13 @@ Not a contradiction of §2 — that declined to model *user* identity. This is
 service-to-service trust across a boundary, a different concern created by the
 async model. A separate port is the production hardening step (see
 [deferred.md](../deferred.md)).
+
+> **Built in [ticket 21](21-internal-verdict-endpoint.md)**, which records why
+> the rule is an `AuthorizationManager` on the chain rather than a filter, why a
+> refusal is `403` and never `401` — a bespoke header is no registered
+> authentication scheme, so there is no honest challenge to send — and why a
+> denial now carries a §18 problem document, which is ticket 04's open question
+> answered by the first refusal a caller is meant to read.
 
 ---
 
@@ -605,6 +618,10 @@ distinguished by their `type` URN (`urn:problem:request-in-progress` vs
 > **[Ticket 34](34-problem-document-module.md)** builds the client half the rule
 > was written for, and keeps it from eroding: the frontend's mapping may not name
 > a status code, asserted against its own source.
+> **[Ticket 21](21-internal-verdict-endpoint.md)** carries the contract past the
+> last response that was exempt from it — a refusal raised in front of the
+> dispatcher, which no `@ControllerAdvice` can see — and is where `instance` is
+> set by hand for the first and only time.
 
 ---
 

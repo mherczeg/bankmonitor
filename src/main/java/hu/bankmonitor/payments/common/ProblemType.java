@@ -29,6 +29,13 @@ public enum ProblemType {
 
 	NOT_FOUND("not-found"),
 
+	/**
+	 * The caller may not have this, and no credential it could present would change that.
+	 * Deliberately says nothing about which credential was wrong or whether one arrived —
+	 * a refusal that distinguished the two would answer a caller probing for the header.
+	 */
+	FORBIDDEN("forbidden"),
+
 	/** Both sides of a Transfer named the same Account. */
 	SELF_TRANSFER("self-transfer"),
 
@@ -44,6 +51,18 @@ public enum ProblemType {
 	 * rather than reinterpreting it.
 	 */
 	CROSS_CURRENCY_UNSUPPORTED("cross-currency-unsupported"),
+
+	/**
+	 * A Verdict named a Check the Transfer's Ledger has no row for. Carries both halves,
+	 * because the pair is what the refusal is about.
+	 */
+	CHECK_NOT_REQUIRED("check-not-required"),
+
+	/**
+	 * A Verdict arrived for a Transfer that had already finished. Carries the status it
+	 * found, which is how a Check service learns what became of the report it redelivered.
+	 */
+	TRANSFER_NOT_PENDING("transfer-not-pending"),
 
 	/** The same idempotency key is being processed right now. Retryable, and says when. */
 	REQUEST_IN_PROGRESS("request-in-progress"),

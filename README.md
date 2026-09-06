@@ -31,7 +31,7 @@ see [`frontend/README.md`](frontend/README.md).
 cd frontend && npm test   # frontend
 ```
 
-Expect **297 passing backend tests** and **62 in the frontend**, with no Docker daemon
+Expect **320 passing backend tests** and **130 in the frontend**, with no Docker daemon
 involved. The backend suite runs on an in-memory H2 database; Testcontainers was rejected
 precisely so this command works on a clean machine.
 
@@ -69,6 +69,7 @@ and no rate source, which is the right shape for pointing the application at a r
 | `POST /api/transfers` | Requests a Transfer between two Accounts, reserving the funds on the source |
 | [`GET /api/transfers`](http://localhost:8080/api/transfers) | Every Transfer in every status, newest first; `?status=` narrows it to one |
 | `GET /api/transfers/{id}` | One Transfer by the identifier the `201` above returns in its `Location` |
+| `POST /internal/transfers/{id}/checks/{check}` | A Check service reports its Verdict — the one endpoint that takes a credential |
 | [`/actuator/health`](http://localhost:8080/actuator/health) | Health check, including H2 connectivity |
 | [`/v3/api-docs`](http://localhost:8080/v3/api-docs) | The OpenAPI document the frontend's types are generated from |
 | [`/swagger-ui/index.html`](http://localhost:8080/swagger-ui/index.html) | Browsable API |
@@ -202,7 +203,7 @@ build.
 
 ## What is built so far
 
-Tickets 01–17, 19–20, 24–25, 27 and 31–36 of 44: the skeleton, schema management, the package
+Tickets 01–17, 19–21, 24–25, 27 and 31–36 of 44: the skeleton, schema management, the package
 structure the domain code will be written into, the security chain in front of it, the error
 contract every endpoint will answer with, the value type every amount in the system is
 expressed in and the single conversion between currencies, the first entity and the first
@@ -211,13 +212,13 @@ and the locking rule the concurrency design rests on, the reservation that rule 
 the endpoint a client posts a Transfer to and the two it is read back from, the claim on an
 Idempotency Key and the duplicate resolution that turns that claim into an answer, the Check
 Ledger a Transfer has to clear before it settles, the one operation that answers a Check and
-moves the money, the third-party Exchange Rate provider the resilience work is aimed at and
-the client that survives it, the table that keeps a committed change and the news of it from
-ever disagreeing, the frontend's shell, the generated API types that join the two halves, the
-frontend edge that turns Minor Units into decimals, the reading an operator gets of a failed
-request, the client half of the Idempotency Key, the stream message that is nothing but a
-cache invalidation, and the two ecosystem bets that had to be settled first.
-**Both bets won.**
+moves the money, the guarded endpoint that operation is reached through, the third-party
+Exchange Rate provider the resilience work is aimed at and the client that survives it, the
+table that keeps a committed change and the news of it from ever disagreeing, the frontend's
+shell, the generated API types that join the two halves, the frontend edge that turns Minor
+Units into decimals, the reading an operator gets of a failed request, the client half of the
+Idempotency Key, the stream message that is nothing but a cache invalidation, and the two
+ecosystem bets that had to be settled first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type
@@ -373,6 +374,56 @@ these services deliver at least once, that is also the answer a redelivery of th
 Verdict gets — the money still moved exactly once. Whether a redelivery deserves a
 friendlier answer than a refusal is in [`docs/deferred.md`](docs/deferred.md).
 
+**A Check service reaches that operation at
+`POST /internal/transfers/{id}/checks/{check}`**, which is the only endpoint in this
+application that takes a credential. The Transfer and the Check are the address, so the
+body carries the Verdict and nothing else — a request that also named a Transfer in its
+payload would leave something to decide which of the two to believe.
+
+`$SECRET` below is `payments.internal.shared-secret`, whose development value is in
+[`application.properties`](src/main/resources/application.properties); the
+[security section](#security-configured-not-disabled) has the rule it feeds.
+
+```console
+$ curl -s -X POST localhost:8080/internal/transfers/1/checks/FRAUD \
+    -H 'Content-Type: application/json' -H "X-Internal-Secret: $SECRET" \
+    -d '{"verdict":"APPROVED"}'
+{"transferId":1,"check":"FRAUD","verdict":"APPROVED","transferStatus":"PENDING"}
+
+$ curl -s -X POST localhost:8080/internal/transfers/1/checks/MANUAL_APPROVAL \
+    -H 'Content-Type: application/json' -H "X-Internal-Secret: $SECRET" \
+    -d '{"verdict":"APPROVED"}'
+{"transferId":1,"check":"MANUAL_APPROVAL","verdict":"APPROVED","transferStatus":"SETTLED"}
+```
+
+**The receipt is why this answers `200` and not `204`.** The two calls are the same
+request against the same Transfer and they are not the same news: the first reporter learns
+its Verdict was not the last word, the second learns that money moved. Under `204` a Check
+service would have to fetch the Transfer back to find out, which is a request made only
+because the previous response withheld something it already knew. The report is echoed
+back too, because a reporter with several Verdicts in flight and a retry policy needs to
+know which one it is holding the receipt for.
+
+Every Transfer requires both Checks today, and after the second `curl` account 1's balance
+has fallen by €100.50 with its Reserved Amount falling alongside it — the reservation is
+consumed, not left behind. A `REJECTED` Verdict on either Check ends the Transfer at the
+first one, and gives the €100.50 back.
+
+Three things are refused, each under its own `type` URN:
+
+| Refusal | Status | URN |
+|---|---|---|
+| No Transfer with that identifier | `404` | `urn:problem:not-found` |
+| A Check that Transfer's ledger has no row for | `404` | `urn:problem:check-not-required` |
+| A Verdict for a Transfer that already finished | `409` | `urn:problem:transfer-not-pending` |
+
+The middle one is a `404` like the first and still not the same fact — the wrong identifier
+against a reporting service running on stale configuration — and telling them apart by
+which properties happen to be present rather than by the URN is the branching the error
+contract exists to prevent. The last carries the status the Transfer had already reached,
+which is what turns a refusal into news, and carries no `Retry-After`: a Transfer never
+leaves a terminal status, so a caller that retried it would retry for ever.
+
 **Virtual threads are on** (`spring.threads.virtual.enabled=true`), and they are
 load-bearing rather than a nicety. The stand-in Exchange Rate provider is a real HTTP
 endpoint inside this same application, so serving a transfer means one request thread
@@ -426,9 +477,50 @@ The chain **denies by default** and names what it opens — the public API under
 the health endpoint, and the OpenAPI document and its UI. That matters less for today's
 application than for the next one: under a blanket `permitAll`, a new prefix is reachable
 the moment its controller is written, and stays reachable if its rule is later deleted.
-The one real authorization rule — a shared secret on the `/internal/**` endpoint that
-receives Check verdicts — lands with the endpoint it protects, because until then there
-is nothing to protect.
+
+**There is one real authorization rule, and it is a shared secret on `/internal/**`** — the
+prefix the Verdict callback arrives on. This is where "no authentication" stops being
+theoretical: an open Verdict endpoint means anyone approves their own Transfer and walks
+past fraud screening. It is not a contradiction of the paragraph above, which declined to
+model *user* identity; this is service-to-service trust across a boundary the asynchronous
+lifecycle created.
+
+```properties
+# What a Check service presents in X-Internal-Secret. A development value,
+# and the one thing in application.properties a deployment must replace.
+payments.internal.shared-secret=development-secret-not-for-deployment
+```
+
+A blank value is a startup failure rather than a permissive rule — an empty configured
+secret would let every request carrying an empty header through while the configuration
+still claimed the endpoint was guarded.
+
+Four things about that rule are decisions rather than defaults:
+
+- **It guards the prefix, not the handler.** A second internal endpoint inherits it instead
+  of having to remember it; the one that forgot would be the open one, and it would look
+  exactly like the ones that did not. The test posts to a path under `/internal` that has
+  no controller behind it at all.
+- **It is an `AuthorizationManager` on the chain, not a filter of our own.** The whole
+  policy then reads in one method, and a reader of `SecurityConfiguration` cannot miss a
+  rule that lives somewhere else.
+- **A refusal is `403`, never `401`, for a missing and a wrong secret alike.** A `401` is
+  obliged to carry a `WWW-Authenticate` challenge naming a registered HTTP authentication
+  scheme, and a bare secret in a bespoke header is not one — so the challenge would either
+  be absent, making the response malformed, or name a scheme this API does not accept. The
+  two refusals are answered identically down to the wording, so that a caller probing the
+  endpoint cannot learn which header is the one being checked.
+- **It grants nothing and authenticates nobody.** Presenting the secret means a request may
+  proceed, not that this application knows which Check service made it. One shared value
+  cannot be rotated per caller or revoked for one of them, and an audit trail cannot name
+  the reporter; a real service identity, and a separate port the public ingress never
+  routes to, are in [`docs/deferred.md`](docs/deferred.md).
+
+The endpoint is in the published OpenAPI document on purpose — a Check service being
+integrated is the reader that document exists for — with an `apiKey` scheme attached to the
+operations under `/internal` and to no others, which is also what puts the Authorize box in
+Swagger UI. Attaching it document-wide would describe the whole API as needing a credential
+the public half does not, sending an integrator to look for one nobody will issue them.
 
 The rest of the chain, and why each is what it is:
 
@@ -448,8 +540,10 @@ Two traps are worth knowing about, because both fail quietly:
    annotation on a controller is never reached. The symptom is an opaque browser failure
    that `curl` cannot reproduce.
 2. **The authorization filter also runs on the `ERROR` dispatch.** With deny-by-default,
-   forgetting to permit it turns every 404 and 405 under a permitted path into an empty
-   403 — a plausible-looking status that hides the real one.
+   forgetting to permit it turns every 404 and 405 under a permitted path into a 403 — a
+   plausible-looking status that hides the real one. Now that a denial carries a problem
+   document it would hide it *convincingly*, under a URN naming a credential nobody was
+   ever asked for.
 
 `SecurityChainTest` asserts each of these through a running server, as an effect a caller
 can observe: a status code, a header, a cookie that is not set. A test that asserted the
@@ -496,9 +590,20 @@ behind it, putting every case through one assertion helper — which is what mak
 caller that has parsed one problem document has parsed all of them" a checked claim
 rather than an intention.
 
-**One error does not pass through here:** a refusal from the security filter chain is
-raised before the dispatcher and answered with an empty body. Nothing is denied on
-purpose yet; see the TODO list.
+**One document is written somewhere else, and it has to be.** A refusal from the security
+filter chain is raised before the dispatcher, so `ProblemDocumentAdvice` never sees it —
+the advice deliberately rethrows an `AccessDeniedException` rather than answering one. A
+denial used to be an empty body, which was a complete answer while the only thing denied
+was a path that does not exist. The shared secret changed who meets it: an operator wiring
+a Check service against the wrong value has to act on the response and has nothing else to
+go on. So the chain carries a handler of its own that writes the same
+`urn:problem:forbidden` document through the same `ProblemType` vocabulary, and
+`SecurityChainTest` asserts the document rather than the status.
+
+One refusal is still a bare `403`, and that is the point of it: a CORS preflight from an
+unlisted origin is answered by `CorsFilter`, ahead of the authorization filter, and a
+browser has to be able to tell "this origin may not ask" from "this caller may not have
+it".
 
 **The client half of the rule is `frontend/src/api/problem.ts`**, which maps a URN to a
 title, a body and whether retrying will help — and reads no other member of the document,
@@ -663,7 +768,7 @@ each documented by its own `package-info.java`:
 hu.bankmonitor.payments
 ├── accounts/      the Account entity, its endpoints, and its Reserved Amount
 ├── transfers/     the Transfer lifecycle — the only package that depends on the others
-│   └── checks/    the Check Ledger, and the /internal endpoint Verdicts arrive on
+│   └── checks/    the Check Ledger, and the policy that decides what goes in it
 ├── idempotency/   run-once-per-key replay protection      · one public port
 ├── fx/            exchange rates from an unreliable provider · one public port
 ├── outbox/        events written in the same transaction as the change · one public port

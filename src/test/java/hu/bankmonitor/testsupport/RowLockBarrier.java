@@ -48,14 +48,23 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>Register it with {@code @Import(RowLockBarrier.class)} on the test class that needs it.
  * Doing so gives that class an application context of its own rather than the one
  * {@link BootedApplicationTest} shares, which costs one extra boot — the price of a
- * concurrency claim that can fail.
+ * concurrency claim that can fail. <b>One extra boot in total, not one per test class</b>:
+ * Spring caches a context per distinct configuration, so every class that imports this and
+ * nothing else shares one context between them. A concurrency test that reached for a
+ * {@code @MockitoBean} or a property override as well would be a configuration of its own
+ * and would boot one more.
  */
 public final class RowLockBarrier implements StatementInspector, HibernatePropertiesCustomizer {
 
 	/** Reached only when a thread the barrier is waiting for never arrives, which is a failure. */
 	private static final Duration BEFORE_GIVING_UP = Duration.ofSeconds(10);
 
-	private final AtomicReference<CountDownLatch> everyThreadsFirstRowLock = new AtomicReference<>();
+	/** What {@link #holdTheOneThreadThatReachesARowLock} counts, and it counts them both. */
+	private static final int THE_ONE_THREAD_AND_THE_RELEASE = 2;
+
+	private static final String A_ROW_LOCK = "for update";
+
+	private final AtomicReference<Arming> armed = new AtomicReference<>();
 
 	/**
 	 * Which arming each thread has already been held for, rather than a flag saying that it
@@ -79,32 +88,85 @@ public final class RowLockBarrier implements StatementInspector, HibernateProper
 	 * whether another thread is sitting on it.
 	 */
 	public void holdEachThreadAtItsFirstRowLock(int threads) {
-		everyThreadsFirstRowLock.set(new CountDownLatch(threads));
+		holdEachThreadAtItsFirstStatementNaming(A_ROW_LOCK, threads);
+	}
+
+	/**
+	 * Arms the barrier at a statement of the test's choosing, for the races whose contending
+	 * threads never reach for a row lock together.
+	 *
+	 * <p>Two retries of a failed Idempotency Key are that race. Both read the claim and both
+	 * try to take it, and the guard on the update is what decides between them — but the read
+	 * and the update are ordinary statements, so the loser routinely arrives after the winner
+	 * has committed, reads a claim that is already taken and is turned away by a branch above
+	 * the one under test. Named on the table instead, the barrier lines both threads up on the
+	 * first statement either of them addresses to it.
+	 *
+	 * @param statementFragment matched case-insensitively against the SQL on its way to the
+	 *                          driver; a table name is usually the honest choice, because it
+	 *                          is what a test can name without also naming how Hibernate
+	 *                          happens to spell the statement
+	 */
+	public void holdEachThreadAtItsFirstStatementNaming(String statementFragment, int threads) {
+		armed.set(new Arming(statementFragment, new CountDownLatch(threads)));
+	}
+
+	/**
+	 * Arms the barrier for the other shape of race — the one where only one of the contending
+	 * threads ever reaches a row at all, so there is no second arrival to wait for and the
+	 * test is what says when the held thread may go on.
+	 *
+	 * <p>{@code ConcurrentRequestsUnderOneKeyExecuteOnceTest} is that shape. Two requests
+	 * carry one Idempotency Key; the database gives the key to one of them and the other is
+	 * turned away by a constraint and two statements, never touching an Account. Counting
+	 * arrivals there would hold the winner until a timeout rather than until the loser had
+	 * been answered, which is the thing the test needs to observe.
+	 *
+	 * <p>Two arrivals because {@link #release} supplies the second. That is the whole
+	 * difference between the two armings: above, the threads free each other; here, the one
+	 * thread is freed by the test.
+	 */
+	public void holdTheOneThreadThatReachesARowLock() {
+		holdEachThreadAtItsFirstRowLock(THE_ONE_THREAD_AND_THE_RELEASE);
 	}
 
 	/** Disarms the barrier, releasing anything still waiting on it. */
 	public void release() {
-		CountDownLatch arrivals = everyThreadsFirstRowLock.getAndSet(null);
-		if (arrivals != null) {
-			while (arrivals.getCount() > 0) {
-				arrivals.countDown();
+		Arming arming = armed.getAndSet(null);
+		if (arming != null) {
+			while (arming.arrivals().getCount() > 0) {
+				arming.arrivals().countDown();
 			}
 		}
 	}
 
 	@Override
 	public String inspect(String sql) {
-		CountDownLatch arrivals = everyThreadsFirstRowLock.get();
-		if (arrivals != null && isARowLock(sql) && alreadyHeldFor.get() != arrivals) {
-			alreadyHeldFor.set(arrivals);
-			arrivals.countDown();
-			awaitTheOthers(arrivals);
+		Arming arming = armed.get();
+		if (arming != null && arming.holdsBackA(sql) && alreadyHeldFor.get() != arming.arrivals()) {
+			alreadyHeldFor.set(arming.arrivals());
+			arming.arrivals().countDown();
+			awaitTheOthers(arming.arrivals());
 		}
 		return sql;
 	}
 
-	private static boolean isARowLock(String sql) {
-		return sql.toLowerCase().contains("for update");
+	/** One race the barrier is armed for: where it holds threads, and how many it is waiting for. */
+	private record Arming(String statementFragment, CountDownLatch arrivals) {
+
+		/**
+		 * Lowercased once here, which is what makes the matching case-insensitive as
+		 * documented: {@link #holdsBackA} lowercases only the statement, so a fragment
+		 * armed in any other case would match nothing — silently, because a barrier that
+		 * holds no thread still passes.
+		 */
+		Arming {
+			statementFragment = statementFragment.toLowerCase();
+		}
+
+		boolean holdsBackA(String sql) {
+			return sql.toLowerCase().contains(statementFragment);
+		}
 	}
 
 	private static void awaitTheOthers(CountDownLatch arrivals) {

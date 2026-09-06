@@ -106,6 +106,9 @@ more than one instance, or folding into the outbox.
 > **[Ticket 17](17-duplicate-resolution.md)** built the port, and it takes a
 > fourth parameter the sketch above does not: a replay is read back out of a
 > database column, and erasure means `T` cannot say what to read it back as.
+> **[Ticket 18](18-idempotency-concurrency-tests.md)** put the alternative this
+> section rejects under a test: the window a check before the transaction leaves
+> open is the one two concurrent requests now walk into.
 
 ---
 
@@ -136,6 +139,9 @@ path is the `FAILED` one and a crash leaves `IN_PROGRESS`.
 > and ships with **phase 2 absent** rather than guessed at: `executeOnce` opens
 > the phase-3 transaction, so there is nowhere in the port to run an FX call
 > outside it, and ticket 26 is the first caller that has one.
+> **[Ticket 18](18-idempotency-concurrency-tests.md)** is what makes phase one's
+> "the unique constraint serialises concurrent duplicates" load-bearing: dropped,
+> two concurrent requests both claim the key and both reserve, 20 runs out of 20.
 
 > **Phase 3 is built in [ticket 13](13-reserve-funds.md)** and reached over HTTP in
 > **[ticket 14](14-request-transfer-endpoint.md)**, whose transaction is the one ticket 16
@@ -188,6 +194,9 @@ first and must never retry the second.
 > the payload hash is taken over — the *parsed* request, so that whitespace is not
 > a payload difference — and why an absent row rethrows the constraint violation
 > instead of being read as this key's.
+> **[Ticket 18](18-idempotency-concurrency-tests.md)** reached the losing side of
+> the conditional update with a real race, and found that it needs the threads held
+> at the *read* of the claim rather than at a row lock — 20/20 against 8/20.
 > **[Ticket 35](35-idempotency-key-module.md)** made the payload-mismatch row
 > unreachable from the frontend rather than merely handled, by keying the client's
 > Idempotency Key on the payload too.
@@ -231,6 +240,8 @@ writes inside one request, that is what the database is for.
 > test has to do before they prove anything.
 > **[Ticket 14](14-request-transfer-endpoint.md)** adds the self-Transfer refusal this
 > section calls for, ahead of the lock rather than inside it.
+> **[Ticket 18](18-idempotency-concurrency-tests.md)** uses a row lock as a
+> rendezvous rather than as a subject, to hold a claim open across a duplicate's read.
 
 ---
 
@@ -909,10 +920,12 @@ the design decision:
   runs the test in a single transaction, so the second thread cannot see the
   first thread's uncommitted claim; both "succeed" and the test passes while
   proving nothing. Write it non-transactional with manual cleanup.
-- **Line the threads up with a `CountDownLatch`** on
-  `Executors.newVirtualThreadPerTaskExecutor()`. Without it, thread one finishes
-  before thread two starts and the race never happens. Assert **exactly** one
-  `201` and one `409`.
+- **Line the threads up** on `Executors.newVirtualThreadPerTaskExecutor()`.
+  Without anything, thread one finishes before thread two starts and the race
+  never happens — but ~~with a `CountDownLatch`~~ a latch at the *start* lines up
+  two beginnings and nothing else, and a whole transaction here runs in less time
+  than it takes to schedule the second thread. Hold the threads at the statement
+  they contend over instead. Assert **exactly** one `201` and one `409`.
 
 Realistic suite, 15–20 tests:
 
@@ -934,6 +947,9 @@ Postgres — see [deferred.md](../deferred.md).
 > **[Ticket 10](10-list-accounts-and-seed.md)** found the matching hazard in the
 > narrow slices: two of them had narrowed one kind of scanning and not the other,
 > and only broke once the application had a controller and a repository to find.
+> **[Ticket 18](18-idempotency-concurrency-tests.md)** struck the latch out of the
+> third trap and has the measurement, and is the first of the four
+> `@SpringBootTest` tests the suite sketch above names.
 
 ---
 

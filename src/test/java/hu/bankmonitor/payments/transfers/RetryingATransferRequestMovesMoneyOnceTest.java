@@ -2,7 +2,6 @@ package hu.bankmonitor.payments.transfers;
 
 import hu.bankmonitor.payments.common.Currency;
 import hu.bankmonitor.payments.common.ProblemType;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -47,17 +46,6 @@ class RetryingATransferRequestMovesMoneyOnceTest extends TransferScenario {
 
 	private static final String A_DIFFERENT_TRANSFER = """
 			{"fromAccountId": 1, "toAccountId": 2, "amountMinorUnits": 20000}""";
-
-	/**
-	 * {@link TransferScenario} empties the three tables a Transfer touches and does not
-	 * know about this one, which outlives every method here for the same reason those do:
-	 * a claim that rolled back with its test has serialised nothing.
-	 */
-	@BeforeEach
-	@AfterEach
-	void emptyTheIdempotencyTable() {
-		database.update("DELETE FROM idempotency_records");
-	}
 
 	@BeforeEach
 	void openTheTwoAccounts() {
@@ -184,11 +172,5 @@ class RetryingATransferRequestMovesMoneyOnceTest extends TransferScenario {
 	private void payInTwiceTheBalance() {
 		database.update("UPDATE accounts SET balance_minor_units = ? WHERE id = ?",
 				BALANCE * 3, SOURCE);
-	}
-
-	private String claimedStatus(String idempotencyKey) {
-		return database.queryForObject(
-				"SELECT status FROM idempotency_records WHERE idempotency_key = ?",
-				String.class, idempotencyKey);
 	}
 }

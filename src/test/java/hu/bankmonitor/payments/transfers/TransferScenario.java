@@ -45,13 +45,24 @@ abstract class TransferScenario extends BootedApplicationTest {
 	@Autowired
 	JdbcTemplate database;
 
-	/** Ledger first, then Transfers, then Accounts: each table points at the one below it. */
+	/**
+	 * Ledger first, then Transfers, then Accounts: each table points at the one below it.
+	 * Claims come last and in any order — no foreign key reaches an Idempotency Key, which
+	 * is the point of design decision 3 putting the claim above the work rather than beside
+	 * it.
+	 *
+	 * <p>The claims are emptied here rather than by the two subclasses that request
+	 * Transfers over HTTP, because a key left behind outlives the test that made it: it is
+	 * committed by design, so the next test to use the same key would be answered by the
+	 * previous test's claim instead of making one.
+	 */
 	@BeforeEach
 	@AfterEach
-	void emptyTheLedgerTransferAndAccountTables() {
+	void emptyTheLedgerTransferAccountAndClaimTables() {
 		database.update("DELETE FROM check_ledger");
 		database.update("DELETE FROM transfers");
 		database.update("DELETE FROM accounts");
+		database.update("DELETE FROM idempotency_records");
 	}
 
 	/**
@@ -102,6 +113,13 @@ abstract class TransferScenario extends BootedApplicationTest {
 	String statusOf(long transferId) {
 		return database.queryForObject(
 				"SELECT status FROM transfers WHERE id = ?", String.class, transferId);
+	}
+
+	/** How far the claim on an Idempotency Key has got, as the string the column holds it as. */
+	String claimedStatus(String idempotencyKey) {
+		return database.queryForObject(
+				"SELECT status FROM idempotency_records WHERE idempotency_key = ?",
+				String.class, idempotencyKey);
 	}
 
 	/** How one Check has been answered for one Transfer, {@code null} while it is outstanding. */

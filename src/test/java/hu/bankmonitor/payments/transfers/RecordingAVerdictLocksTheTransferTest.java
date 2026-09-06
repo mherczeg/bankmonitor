@@ -11,6 +11,7 @@ import java.util.List;
 
 import static hu.bankmonitor.payments.common.Currency.EUR;
 import static hu.bankmonitor.payments.transfers.checks.Check.FRAUD;
+import static hu.bankmonitor.payments.transfers.checks.Check.MANUAL_APPROVAL;
 import static hu.bankmonitor.payments.transfers.checks.Verdict.APPROVED;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -65,5 +66,38 @@ class RecordingAVerdictLocksTheTransferTest extends TransferScenario {
 		assertThat(rowLocks.getFirst())
 				.contains("from transfers")
 				.contains("where");
+	}
+
+	/**
+	 * The same claim on the only path that takes both kinds of lock. The test above answers one
+	 * Check of two, so the Transfer's is the only row lock issued and "first" is true of a list
+	 * with one entry in it — which leaves the ordering claim resting on a scenario that never
+	 * reaches an Account.
+	 *
+	 * <p>Settling is where the order can actually be violated, and where a violation would
+	 * matter: an Account locked before the Transfer would put this operation's lock graph the
+	 * other way round from every other path that touches both. Which of the two Accounts comes
+	 * first is not asserted here because the statements carry {@code ?} rather than the
+	 * identifiers — ascending order is {@code AccountLockIsASelectForUpdateTest}'s claim, and
+	 * this one sits above it.
+	 */
+	@Test
+	@DisplayName("settling locks the Transfer's row before either Account's")
+	void locksTheTransferBeforeTheAccountsItSettlesAgainst() {
+		long transfer = reservation.reserve(transferOf(80_00L, SOURCE, DESTINATION)).getId();
+		verdicts.recordVerdict(transfer, FRAUD, APPROVED);
+		statements.forget();
+
+		verdicts.recordVerdict(transfer, MANUAL_APPROVAL, APPROVED);
+
+		List<String> rowLocks = statements.captured().stream()
+				.filter(sql -> sql.endsWith("for update"))
+				.toList();
+
+		assertThat(rowLocks)
+				.as("the Transfer and both of its Accounts are locked, in that order")
+				.hasSize(3);
+		assertThat(rowLocks.getFirst()).contains("from transfers");
+		assertThat(rowLocks.subList(1, 3)).allSatisfy(sql -> assertThat(sql).contains("from accounts"));
 	}
 }

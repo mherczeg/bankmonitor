@@ -32,14 +32,11 @@ import org.springframework.transaction.annotation.Transactional;
  * move the money.
  * </ol>
  *
- * <p>Step 1 is what makes concurrent Verdicts safe, and it is worth being precise about why,
- * because the conditional update in step 4 looks like it should be enough and is not. Two
- * Verdicts arriving together each write their own ledger row, and neither transaction can see
- * the other's until it commits — so both read a ledger with one Check still outstanding, both
- * decide to wait, and the Transfer stays {@code PENDING} for ever against a fully approved
- * ledger. Neither transaction ever reaches the update, so no guard on it helps.
+ * <p>Step 1 is what makes concurrent Verdicts safe — not the conditional update in step 4,
+ * which looks like it should be enough and is not, because the failure it misses is two
+ * Verdicts that both decide to wait and never reach an update at all.
  * {@link TransferTransitions#findAndLockById} is where that argument is written down at
- * length.
+ * length, and it is the method to read before changing this order.
  *
  * <p><b>Lock order is Transfer first, then Accounts ascending</b>, and it has to be the same
  * everywhere or the ordering buys nothing. It is acyclic against the reservation, which takes

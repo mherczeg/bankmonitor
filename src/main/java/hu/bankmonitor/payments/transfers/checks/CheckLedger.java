@@ -106,10 +106,11 @@ public class CheckLedger {
 	 *                                                                         has no
 	 *                                                                         transaction
 	 *                                                                         open
-	 * @throws CheckNotRequiredException if the Transfer's ledger has no row for that Check
-	 * @throws IllegalArgumentException  if the Transfer has no ledger at all, which
-	 *                                   {@link LedgerDecision#decide} refuses rather than
-	 *                                   settles
+	 * @throws CheckNotRequiredException if the Transfer's ledger has no row for that Check,
+	 *                                   which is also the answer a Transfer with no ledger at
+	 *                                   all gets — it reaches this refusal before
+	 *                                   {@link LedgerDecision#decide} can be handed the empty
+	 *                                   rows it exists to refuse
 	 */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public LedgerDecision record(long transferId, Check check, Verdict verdict) {

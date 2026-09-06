@@ -139,18 +139,19 @@ build.
 
 ## What is built so far
 
-Tickets 01–14, 16–19 and 31–36 of 44: the skeleton, schema management, the package
+Tickets 01–14, 16–20 and 31–36 of 44: the skeleton, schema management, the package
 structure the domain code will be written into, the security chain in front of it, the error
 contract every endpoint will answer with, the value type every amount in the system is
 expressed in and the single conversion between currencies, the first entity and the first
 table, the first endpoint that writes to it and the first that reads it back, the Transfer
 and the locking rule the concurrency design rests on, the reservation that rule protects,
 the endpoint a client posts a Transfer to, the claim on an Idempotency Key, the Check
-Ledger a Transfer has to clear before it settles, the frontend's shell, the generated API
-types that join the two halves, the frontend edge that turns Minor Units into decimals, the
-reading an operator gets of a failed request, the client half of the Idempotency Key, the
-stream message that is nothing but a cache invalidation, and the two ecosystem bets that had
-to be settled first. **Both bets won.**
+Ledger a Transfer has to clear before it settles, the one operation that answers a Check
+and moves the money, the frontend's shell, the generated API types that join the two
+halves, the frontend edge that turns Minor Units into decimals, the reading an operator
+gets of a failed request, the client half of the Idempotency Key, the stream message that
+is nothing but a cache invalidation, and the two ecosystem bets that had to be settled
+first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type
@@ -274,6 +275,37 @@ policy and a row in the ledger — no new endpoint, no new state, and nothing in
 settlement rule to revisit. **That extensibility is the whole reason the lifecycle is
 asynchronous**, and it is argued in
 [ADR-0001](docs/adr/0001-asynchronous-transfer-lifecycle.md).
+
+**A Transfer's lifecycle advances in exactly one place**, and it is a domain operation
+rather than an endpoint: recording a Verdict answers one Check, asks the ledger what the
+whole of it then supports, and settles or rejects on that answer. The inbound HTTP callback
+is an adapter over it and a broker consumer could be a second one, without the domain
+changing — which is why the refusals it raises are exceptions about the Transfer rather
+than status codes. **Settlement moves both of the source's figures**: the balance falls and
+the Reserved Amount falls with it, because the reservation is consumed rather than left
+behind for every later overdraft check to test against, and the destination's balance
+rises. **Rejection writes no compensating movement**, because no money ever moved — the
+reservation is simply given up. That is the payoff of settling asynchronously: *undo a
+payment* became *do not make one*.
+
+**What makes two Verdicts arriving at once safe is a row lock on the Transfer, not the
+guarded update on its status.** The guarded update is there and it is the same
+conditional-update-with-a-rows-affected-check used for the Idempotency Key, but under the
+lock it cannot fire, and the failure it does not address is the worse one: two Verdicts
+landing together each write their own ledger row, neither transaction can see the other's
+until it commits, so both read a ledger with one Check still outstanding and both decide to
+wait — leaving the Transfer `PENDING` for ever against a fully approved ledger, holding an
+operator's funds. Neither ever reaches an `UPDATE`, so no guard on one helps. Locking the
+Transfer first serialises the whole decision, and the second Verdict reads a ledger the
+first has committed. The order is **the Transfer, then its Accounts ascending**, which
+stays acyclic against the reservation path that takes Account locks only.
+
+A Verdict for a Transfer that has already finished is **refused rather than written into
+the ledger of a dead Transfer**, and the refusal carries the status it found: a Check
+service that is told `SETTLED` has learnt that its report landed and what it did. Since
+these services deliver at least once, that is also the answer a redelivery of the winning
+Verdict gets — the money still moved exactly once. Whether a redelivery deserves a
+friendlier answer than a refusal is in [`docs/deferred.md`](docs/deferred.md).
 
 **Virtual threads are on** (`spring.threads.virtual.enabled=true`), and they are
 load-bearing rather than a nicety. The stand-in Exchange Rate provider is a real HTTP

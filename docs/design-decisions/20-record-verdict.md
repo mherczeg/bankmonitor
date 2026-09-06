@@ -62,7 +62,7 @@ reaper will want.
 `advanceFromPending` is `UPDATE … WHERE id = ? AND status = 'PENDING'` returning
 a row count, exactly as the ticket asks. Under the row lock **it cannot fail** —
 and the mutation table below records that removing the `AND status = 'PENDING'`
-clause leaves all 213 tests green.
+clause leaves all 214 tests green.
 
 That is not an argument for deleting it. What it buys is that the transition
 carries its own precondition rather than trusting its caller to have checked one:
@@ -259,7 +259,7 @@ Transfer `SETTLED`.
 
 | mutation to production code | test that turns red |
 |---|---|
-| delete `@Lock(PESSIMISTIC_WRITE)` from `findAndLockById` | `locksTheTransferRowFirst` |
+| delete `@Lock(PESSIMISTIC_WRITE)` from `findAndLockById` | `locksTheTransferRowFirst`, `locksTheTransferBeforeTheAccountsItSettlesAgainst` |
 | lock the Accounts before the Transfer in `recordVerdict` | `locksTheTransferRowFirst` |
 | `Account.settle` lowers the balance without consuming the reservation | 5 in `AccountSettlesAndReleasesWhatItReservedTest`, 2 in `RecordedVerdictsAdvanceTheTransferTest` |
 | delete `locked.source().release(...)` from the rejecting path | `oneRejectionRejectsTheTransferImmediately` |
@@ -267,7 +267,7 @@ Transfer `SETTLED`.
 | delete the terminal-status refusal from `recordVerdict` | `aVerdictOnAnAlreadyTerminalTransferIsRefused`, `theSameVerdictTwiceAdvancesTheTransferOnce` |
 | delete the `CheckNotRequiredException` guard from `CheckLedger.record` | `aVerdictForACheckTheTransferDoesNotRequireIsRefused`, `refusesAVerdictForACheckTheTransferDoesNotRequire` |
 | give `VerdictRecording` a `TransferRepository` field | `onlyTheReservationWritesATransfer` |
-| **drop `AND transfer.status = PENDING` from `advanceFromPending`** | **nothing — all 213 tests stay green** |
+| **drop `AND transfer.status = PENDING` from `advanceFromPending`** | **nothing — all 214 tests stay green** |
 
 Each was applied, run, and reverted.
 
@@ -298,6 +298,17 @@ Hibernate through `CapturingStatementInspector` and asserts that the first
 `@Lock` and it turns red on reordering the two locks, which is the second claim
 the deadlock argument rests on. The two tests are halves of one argument and
 neither is worth much alone.
+
+It asserts that on **both** paths, and the second one is why. A Verdict that
+leaves the Transfer waiting issues the Transfer's lock and no other, so "first"
+is a claim about a list with one entry in it and the ordering is true of a
+scenario that never reaches an Account. Settling is where both kinds of lock are
+taken and therefore the only place the order can actually be violated:
+`locksTheTransferBeforeTheAccountsItSettlesAgainst` asserts three row locks,
+`transfers` before both `accounts`. Which of the two Accounts comes first is not
+asserted here — the statements carry `?` rather than the identifiers, so
+ascending order stays `AccountLockIsASelectForUpdateTest`'s claim and this one
+sits above it.
 
 ---
 

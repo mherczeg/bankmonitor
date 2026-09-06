@@ -133,6 +133,53 @@ that skipped the call would be relying on the unmount to say so — a dependency
 that nothing in either module records. It costs one line, and the line that would replace
 it is a comment explaining why the contract is not honoured here.
 
+## `reset()` on any non-idle mutation loses a refusal that is still on its way
+
+[Ticket 39](39-create-account-form.md) voids a stale verdict with a form-level listener:
+
+```ts
+onChange: () => { if (!opening.isIdle) opening.reset() }
+```
+
+Copied here, it is wrong in a window that form has too. `!isIdle` includes **pending**, and
+`reset()` detaches the observer from the running mutation. A keystroke while the `POST` is
+open therefore leaves the request in flight with nothing watching it: the refusal lands on
+a detached observer, `isError` never becomes true, and the operator sees no alert at all
+for a request that did go out. Success survives — `onSuccess` is the mutation's own option,
+not the observer's — which is why the bug is invisible on the happy path.
+
+The guard is the comment's own words made exact: a *verdict* is what a change voids, and a
+request in flight is not one yet.
+
+```ts
+onChange: () => { if (requesting.isError || requesting.isSuccess) requesting.reset() }
+```
+
+**Ticket 39's form is corrected in place**, on the precedent that ticket set with
+`parseAmount`: a defect found in a shipped module is fixed where it is, not worked around
+in the ticket that met it. Nothing about either form's behaviour changes outside the
+in-flight window, and every existing spec stays green.
+
+**It has no browser coverage**, and cannot: the harness answers immediately, so there is no
+in-flight moment to type into. That is the same gap [deferred.md](../deferred.md) records
+for the spinner and the disabled button, and this is the first thing behind it that is a
+bug rather than an unproven rendering — noted there, because it raises what the held-answer
+mechanism is worth.
+
+## `useRef(startIntent())` opens a supply per render and keeps the first
+
+The argument to `useRef` is evaluated on every render and all but the first result is
+discarded. It is harmless here — ticket 35 mints nothing until a key is read — but the
+claim this screen makes is *"opened once"*, and the obvious spelling does not say that.
+
+```ts
+const held = useRef<IdempotencyKeys | null>(null)
+const keys = (held.current ??= startIntent())
+```
+
+React's lazy-ref idiom, and the smallest edit that makes the sentence in this record true
+of the call and not only of the value.
+
 ## Two extractions, and what decided each
 
 **`formRefusal.ts`.** `serverRefusalIn` and `messagesUnder` were ticket 39's, written
@@ -214,9 +261,11 @@ semantics are what the key rule rests on; §23's `<select>`, `.is-invalid` and
 `.input-group` vocabulary needed nothing new; §24's extract-and-unit-test rule produced
 `transferSchema.ts` and its 21 tests before any of this markup existed.
 
-Two earlier records are **extended**. [Ticket 39](39-create-account-form.md)'s named cost —
-the zero rule with nowhere to live — is discharged in the first section above.
-[Ticket 35](35-idempotency-key-module.md)'s "the module cannot enforce that the payload is
+One earlier record is **corrected**: [ticket 39](39-create-account-form.md)'s
+`if (!opening.isIdle) opening.reset()` loses a refusal that arrives after a keystroke, and
+the reasoning is above. Two are **extended** — that ticket's named cost, the zero rule with
+nowhere to live, is discharged in the first section, and
+[ticket 35](35-idempotency-key-module.md)'s "the module cannot enforce that the payload is
 the submitted one" gains the caller that does.
 
 The submitting state is rendered — the button reads *Requesting…* and is disabled — and is

@@ -629,6 +629,10 @@ distinguished by their `type` URN (`urn:problem:request-in-progress` vs
 > last response that was exempt from it — a refusal raised in front of the
 > dispatcher, which no `@ControllerAdvice` can see — and is where `instance` is
 > set by hand for the first and only time.
+> **[Ticket 40](40-transfer-form.md)** declines the extension that would have grown the
+> second discriminator by another route: `insufficient-funds` carries an
+> `availableBalanceMinorUnits` worth rendering, and a reader that knew *which URNs carry
+> extra members worth rendering* is a URN branch beside the one this section allows.
 
 ---
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import refusalSource from './formRefusal.ts?raw'
-import { messagesUnder, serverRefusalIn } from './formRefusal'
+import { formRefusalIn, messagesUnder } from './formRefusal'
 import { plainModuleRules } from './testsupport/plainModule'
 
 const aRefusal = (errors: { field: string | null; message: string }[]) => ({
@@ -13,7 +13,7 @@ const FIELD_FOR_MEMBER = { amountMinorUnits: 'amount' } as const
 
 describe('where a refusal of the request lands on a form', () => {
   it('puts a refused wire member against the field that can be corrected', () => {
-    const { perField, unattached } = serverRefusalIn(
+    const { perField, unattached } = formRefusalIn(
       aRefusal([{ field: 'amountMinorUnits', message: 'must be greater than 0' }]),
       FIELD_FOR_MEMBER,
     )
@@ -24,7 +24,7 @@ describe('where a refusal of the request lands on a form', () => {
 
   /** Dropping it would leave an operator with a heading and no reason. */
   it('keeps a refusal the form has no field for, under the name the service used', () => {
-    const { perField, unattached } = serverRefusalIn(
+    const { perField, unattached } = formRefusalIn(
       aRefusal([
         { field: null, message: 'the request was refused as a whole' },
         { field: 'somethingElse', message: 'must be smaller' },
@@ -39,7 +39,7 @@ describe('where a refusal of the request lands on a form', () => {
   /** What a mutation that has not failed carries, and what a gateway's error page is. */
   it('is nothing refused for a failure that named no members, and for no failure at all', () => {
     for (const failure of [null, undefined, new Error('offline'), aRefusal([])]) {
-      expect(serverRefusalIn(failure, FIELD_FOR_MEMBER)).toEqual({ perField: {}, unattached: [] })
+      expect(formRefusalIn(failure, FIELD_FOR_MEMBER)).toEqual({ perField: {}, unattached: [] })
     }
   })
 })

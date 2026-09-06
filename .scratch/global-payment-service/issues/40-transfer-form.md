@@ -137,3 +137,26 @@ the held-answer mechanism; this is that spec by count and not by need, since non
 checkboxes above is about an in-flight state, and the one place a double submit could have
 cost something is the one place the Idempotency Key already covers it. The entry now names
 ticket 41 instead, whose subject is a state a spec has to be able to hold open.
+
+**Found in review — `reset()` on any non-idle mutation loses a refusal still on its way.**
+Ticket 39's `if (!opening.isIdle) opening.reset()` was copied here and is wrong in a window
+that form has too: `!isIdle` includes *pending*, and `reset()` detaches the observer from
+the running mutation, so a keystroke during an open `POST` leaves the refusal landing on
+nothing — no alert, no **Try again**, for a request that did go out. Success survives,
+because `onSuccess` is the mutation's own option rather than the observer's, which is why
+it is invisible on the happy path. Both forms now reset only on a verdict
+(`isError || isSuccess`), which is what the comment beside them always claimed. **Ticket
+39's form is corrected in place**, on the precedent that ticket set with `parseAmount`. The
+fix has no browser assertion and cannot have one — the harness answers immediately, so
+there is no in-flight moment to type into — and `docs/deferred.md` now records that this
+gap has cost a real bug rather than an unproven rendering.
+
+**Also from review.** `useRef(startIntent())` evaluates its argument on every render and
+keeps the first result; harmless, since ticket 35 mints nothing until a key is read, but
+this screen's claim is *"opened once"* and the obvious spelling does not say that. It is
+React's lazy-ref idiom now. `schema.parse` moved out of the submit handler's `try`, so the
+throw that cannot happen would show as a throw rather than as a submit that silently did
+nothing. The two `<select>` sides collapsed into one `AccountField`, and
+`formRefusal.ts`'s export is `formRefusalIn` — the two schemas were importing
+`serverRefusalIn as formRefusalIn` and re-exporting `serverRefusalIn`, which read
+backwards.

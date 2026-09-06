@@ -38,10 +38,12 @@ export function NewAccountForm() {
     validators: { onChange: newAccountSchema },
 
     listeners: {
-      // A verdict is about the payload that produced it, and the operator has just changed
-      // that payload.
+      // A verdict is about the payload that produced it, and the operator has just
+      // changed that payload. A request still in flight is not a verdict, and resetting
+      // one detaches the observer: the refusal would arrive at nothing, leaving the
+      // operator with no alert for a request that did go out.
       onChange: () => {
-        if (!opening.isIdle) opening.reset()
+        if (opening.isError || opening.isSuccess) opening.reset()
       },
     },
 

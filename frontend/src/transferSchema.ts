@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Account, Currency, NewTransfer } from './api/types'
-import { type FieldForMember, type ServerRefusal, serverRefusalIn as formRefusalIn } from './formRefusal'
+import { type FieldForMember, type ServerRefusal, formRefusalIn } from './formRefusal'
 import { type AmountRejection, decimalPlacesIn, formatAmount, parseAmount } from './money'
 
 /**

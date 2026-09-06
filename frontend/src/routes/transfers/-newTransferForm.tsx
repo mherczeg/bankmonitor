@@ -3,7 +3,7 @@ import { useForm } from '@tanstack/react-form'
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { problemToMessage } from '../../api/problem'
-import { startIntent } from '../../api/idempotency'
+import { type IdempotencyKeys, startIntent } from '../../api/idempotency'
 import { requestTransfer } from '../../api/transfers'
 import type { Account, NewTransfer } from '../../api/types'
 import { messagesUnder } from '../../formRefusal'
@@ -35,9 +35,12 @@ const NO_DENOMINATION = '—'
 export function NewTransferForm({ accounts }: { accounts: readonly Account[] }) {
   const navigate = useNavigate()
 
-  // A ref, not state: a new key is never something to re-render over. Opened once per
-  // mount, which is once per screen — the route renders this only after the list arrives.
-  const keys = useRef(startIntent())
+  // A ref, not state: a new key is never something to re-render over. Assigned through
+  // the guard rather than as `useRef(startIntent())`, which evaluates its argument on
+  // every render and discards all but the first — harmless, since ticket 35 mints nothing
+  // until a key is read, and still a supply opened per keystroke.
+  const held = useRef<IdempotencyKeys | null>(null)
+  const keys = (held.current ??= startIntent())
 
   const schema = useMemo(() => transferSchemaFor(accounts), [accounts])
 
@@ -45,13 +48,13 @@ export function NewTransferForm({ accounts }: { accounts: readonly Account[] }) 
     // The key is derived from the mutation's own variables, which is what makes a retry
     // go out under the key its first attempt used: TanStack re-invokes this with the
     // variables `mutate` was called with, never with whatever the form holds now.
-    mutationFn: (transfer: NewTransfer) => requestTransfer(transfer, keys.current.keyFor(transfer)),
+    mutationFn: (transfer: NewTransfer) => requestTransfer(transfer, keys.keyFor(transfer)),
 
     onSuccess: (transfer) => {
       // Redundant in practice — navigating unmounts this form and the ref with it — and
       // called anyway, because the module's contract is that a success ends an intent and
       // a screen that skipped it would be relying on the unmount to say so.
-      keys.current.succeeded()
+      keys.succeeded()
 
       void navigate({ to: '/transfers/$transferId', params: { transferId: String(transfer.id) } })
     },
@@ -59,24 +62,29 @@ export function NewTransferForm({ accounts }: { accounts: readonly Account[] }) 
 
   const form = useForm({
     defaultValues: NOTHING_CHOSEN,
-    // Registered under `onChange` only: TanStack runs the change validator on submit too,
-    // and a second registration puts every sentence under its field twice.
+    // `onChange` only — a second registration under `onSubmit` prints every sentence
+    // twice, measured in design decision 39.
     validators: { onChange: schema },
 
     listeners: {
-      // A verdict is about the payload that produced it, and the operator has just changed
-      // that payload.
+      // A verdict is about the payload that produced it, and the operator has just
+      // changed that payload. A request still in flight is not a verdict, and resetting
+      // one detaches the observer: the refusal would arrive at nothing, leaving the
+      // operator with no alert for a request that did go out.
       onChange: () => {
-        if (!requesting.isIdle) requesting.reset()
+        if (requesting.isError || requesting.isSuccess) requesting.reset()
       },
     },
 
     onSubmit: async ({ value }) => {
+      // Validation hands back what was typed, never the transformed value, so the
+      // converted shape is asked for here. Outside the `try`, because it cannot throw —
+      // the same schema has just accepted these values — and a submit that silently did
+      // nothing is how that would show if it ever did.
+      const transfer = schema.parse(value)
+
       try {
-        // Validation hands back what was typed, never the transformed value, so the
-        // converted shape is asked for here. It cannot throw — the same schema has just
-        // accepted these values.
-        await requesting.mutateAsync(schema.parse(value))
+        await requesting.mutateAsync(transfer)
       }
       catch {
         // Already rendered from `requesting`; rethrowing would only repeat it as an
@@ -102,57 +110,29 @@ export function NewTransferForm({ accounts }: { accounts: readonly Account[] }) 
         <div className="row g-3 align-items-start">
           <div className="col-sm-4">
             <form.Field name="fromAccountId">
-              {(field) => {
-                const messages = messagesUnder(field.state.meta.errors, refusal.perField.fromAccountId)
-
-                return (
-                  <>
-                    <label className="form-label" htmlFor={field.name}>
-                      From
-                    </label>
-                    <select
-                      id={field.name}
-                      name={field.name}
-                      className={`form-select ${invalidWhen(messages)}`}
-                      data-testid="new-transfer-source"
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(edit) => field.handleChange(edit.target.value)}
-                    >
-                      <AccountOptions accounts={accounts} />
-                    </select>
-                    <FieldRefusals testId="new-transfer-source-error" messages={messages} />
-                  </>
-                )
-              }}
+              {(field) => (
+                <AccountField
+                  field={field}
+                  label="From"
+                  testId="new-transfer-source"
+                  accounts={accounts}
+                  fromServer={refusal.perField.fromAccountId}
+                />
+              )}
             </form.Field>
           </div>
 
           <div className="col-sm-4">
             <form.Field name="toAccountId">
-              {(field) => {
-                const messages = messagesUnder(field.state.meta.errors, refusal.perField.toAccountId)
-
-                return (
-                  <>
-                    <label className="form-label" htmlFor={field.name}>
-                      To
-                    </label>
-                    <select
-                      id={field.name}
-                      name={field.name}
-                      className={`form-select ${invalidWhen(messages)}`}
-                      data-testid="new-transfer-destination"
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(edit) => field.handleChange(edit.target.value)}
-                    >
-                      <AccountOptions accounts={accounts} />
-                    </select>
-                    <FieldRefusals testId="new-transfer-destination-error" messages={messages} />
-                  </>
-                )
-              }}
+              {(field) => (
+                <AccountField
+                  field={field}
+                  label="To"
+                  testId="new-transfer-destination"
+                  accounts={accounts}
+                  fromServer={refusal.perField.toAccountId}
+                />
+              )}
             </form.Field>
           </div>
 
@@ -199,8 +179,7 @@ export function NewTransferForm({ accounts }: { accounts: readonly Account[] }) 
 
         <form.Subscribe selector={(state) => state.isSubmitting}>
           {(isSubmitting) => (
-            // Never disabled for being invalid: a first press on an untouched form has to
-            // reveal every rule at once.
+            // Never disabled for being invalid — design decision 39's rule.
             <button
               type="submit"
               className="btn btn-primary mt-3"
@@ -230,19 +209,63 @@ export function NewTransferForm({ accounts }: { accounts: readonly Account[] }) 
 }
 
 /**
- * One entry per Account, showing what it can still spend: the refusal an operator meets
- * most often here is an Available Balance that does not cover the amount, and the figure
- * that decides it belongs in the list they are choosing from.
+ * What this component needs of a TanStack field, which is a good deal less than a
+ * `FieldApi` describes. Named structurally so the two sides of the Transfer stay one
+ * component rather than two files that have to be edited together.
  */
-function AccountOptions({ accounts }: { accounts: readonly Account[] }) {
+interface ChosenAccount {
+  readonly name: string
+  readonly state: { readonly value: string; readonly meta: { readonly errors: readonly unknown[] } }
+  handleBlur: () => void
+  handleChange: (chosen: string) => void
+}
+
+/**
+ * One side of the Transfer. The two are the same element with different words: the source
+ * and the destination are chosen from one list, judged by one schema, and differ only in
+ * which sentence lands under which of them.
+ *
+ * Each option shows what its Account can still spend, because the refusal an operator
+ * meets most often here is an Available Balance that does not cover the amount, and the
+ * figure that decides it belongs in the list they are choosing from.
+ */
+function AccountField({
+  field,
+  label,
+  testId,
+  accounts,
+  fromServer,
+}: {
+  field: ChosenAccount
+  label: string
+  testId: string
+  accounts: readonly Account[]
+  fromServer: string | undefined
+}) {
+  const messages = messagesUnder(field.state.meta.errors, fromServer)
+
   return (
     <>
-      <option value="">Choose an account</option>
-      {accounts.map(({ id, currency, availableBalanceMinorUnits }) => (
-        <option key={id} value={id}>
-          {id} — {formatAmount(availableBalanceMinorUnits, currency)} {currency}
-        </option>
-      ))}
+      <label className="form-label" htmlFor={field.name}>
+        {label}
+      </label>
+      <select
+        id={field.name}
+        name={field.name}
+        className={`form-select ${invalidWhen(messages)}`}
+        data-testid={testId}
+        value={field.state.value}
+        onBlur={field.handleBlur}
+        onChange={(edit) => field.handleChange(edit.target.value)}
+      >
+        <option value="">Choose an account</option>
+        {accounts.map(({ id, currency, availableBalanceMinorUnits }) => (
+          <option key={id} value={id}>
+            {id} — {formatAmount(availableBalanceMinorUnits, currency)} {currency}
+          </option>
+        ))}
+      </select>
+      <FieldRefusals testId={`${testId}-error`} messages={messages} />
     </>
   )
 }

@@ -726,6 +726,15 @@ response the spec releases when it chooses, so the sequence stays ordered by the
 spec: assert the spinner, release the answer, assert the table. That keeps the
 "no timers" property intact.
 
+**What the gap has now cost once.**
+[Ticket 40](design-decisions/40-transfer-form.md) found a real bug inside this
+window rather than an unproven rendering: `if (!mutation.isIdle) mutation.reset()`
+also fires while a request is *pending*, and `reset()` detaches the observer — so
+a keystroke during an open `POST` left the refusal landing on nothing and the
+operator with no alert for a request that did go out. Both forms are fixed to
+reset only on a verdict, and neither fix has a browser assertion, because there
+is no in-flight moment to type into.
+
 **Why it is still deferred after a third screen.** Ticket 39's record said the
 next spec wanting this assertion should build the mechanism rather than defer
 again. Ticket 40 is that spec by count and is not by need: none of its checkboxes

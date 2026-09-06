@@ -78,8 +78,8 @@ export type ScriptedApi = {
    * as the `201` the endpoint sends.
    *
    * The Transfer's own page is scripted separately with {@link ScriptedApi.transfer}, on
-   * {@link ScriptedApi.opensAccount}'s reasoning: the screen the form navigates to fetches
-   * the Transfer for itself, so a spec that answered both from one call would hide the
+   * {@link ScriptedApi.opensAccount}'s reasoning: once that page fetches — it is a
+   * placeholder until ticket 41 — a spec answering both from one call would hide the
    * fetch it is there to make.
    */
   requestsTransfer: (transfer: Transfer) => void

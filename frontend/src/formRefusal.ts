@@ -35,7 +35,7 @@ export type FieldForMember<TField extends string> = Readonly<Partial<Record<stri
  * Anything that is not a problem document naming members — including the `null` a
  * mutation that has not failed carries — is nothing refused.
  */
-export const serverRefusalIn = <TField extends string>(
+export const formRefusalIn = <TField extends string>(
   failure: unknown,
   fieldForMember: FieldForMember<TField>,
 ): ServerRefusal<TField> => {

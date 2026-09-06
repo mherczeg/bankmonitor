@@ -60,6 +60,29 @@ test('a subscription that dropped and came back still delivers', async ({ api, p
   await expect(page.getByTestId('balance-1')).toHaveText('75.50')
 })
 
+// The fixture is deliberately not destructured: a spec that never mentions `api` is the
+// one that would reach the dev server, and through it whatever backend is running.
+test('a spec that scripts nothing still runs against the scripted network', async ({ page }) => {
+  await page.goto(SUBJECT)
+
+  await expect(page.getByTestId('failure')).toHaveText('That is not there')
+})
+
+test('a subscription that has dropped refuses a dispatch until it is back', async ({
+  api,
+  page,
+}) => {
+  api.accounts([anAccount({ id: 1, balanceMinorUnits: 100_50 })])
+
+  await page.goto(SUBJECT)
+  await expect(page.getByTestId('balance-1')).toHaveText('100.50')
+
+  const stream = await eventStream(page)
+  await stream.drop()
+
+  await expect(stream.message(settled(7))).rejects.toThrow(/dropped/)
+})
+
 test('a scripted refusal reaches the screen as the problem document it was given', async ({
   api,
   page,

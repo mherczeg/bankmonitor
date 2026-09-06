@@ -15,10 +15,10 @@ import type { Page } from '@playwright/test'
  * network, no reconnect timer, no `Last-Event-ID`. What it does keep is the *shape* of a
  * real connection, because the app's behaviour is written against it: a source opens
  * asynchronously after construction rather than in its constructor, a closed source
- * delivers nothing, and a dropped one goes back to `CONNECTING` and is reopened. Reopening
- * is the one place the fake departs from the browser, which reconnects on a timer of its
- * own; here it is a call the spec makes, which is what keeps a reconnection test free of
- * waiting.
+ * delivers nothing, and neither does a dropped one, which goes back to `CONNECTING` until
+ * it is reopened. Reopening is the one place the fake departs from the browser, which
+ * reconnects on a timer of its own; here it is a call the spec makes, which is what keeps
+ * a reconnection test free of waiting.
  */
 
 /** One source the app has constructed, as the page keeps it. */
@@ -50,7 +50,11 @@ export type BrowserEventStream = {
   /** The URL the app subscribed to. */
   readonly url: string
 
-  /** Delivers one frame on the default `message` event, which is where this API's events travel. */
+  /**
+   * Delivers one frame on the default `message` event, which is where this API's events
+   * travel. Refused unless the subscription is open, because a dropped or closed one
+   * delivers nothing in a browser either.
+   */
   message: (frame: string) => Promise<void>
 
   /** Drops the connection the way a proxy timing out does: an `error`, then `connecting`. */
@@ -94,10 +98,14 @@ export const eventStream = async (page: Page): Promise<BrowserEventStream> => {
   return {
     url,
     message: (frame) =>
-      page.evaluate(({ at, delivered }) => window.__eventSources__[at].message(delivered), { at: index, delivered: frame }),
+      page.evaluate(({ at, delivered }) => window.__eventSources__[at].message(delivered), {
+        at: index,
+        delivered: frame,
+      }),
     drop: () => page.evaluate((at) => window.__eventSources__[at].drop(), index),
     reopen: () => page.evaluate((at) => window.__eventSources__[at].reopen(), index),
-    state: async () => STATES[await page.evaluate((at) => window.__eventSources__[at].readyState, index)],
+    state: async () =>
+      STATES[await page.evaluate((at) => window.__eventSources__[at].readyState, index)],
   }
 }
 
@@ -149,7 +157,7 @@ const fakeEventSource = (): void => {
     }
 
     message(frame: string): void {
-      this.refuseWhenClosed('deliver a message on')
+      this.refuseUnlessOpen('deliver a message on')
       this.deliver(new MessageEvent('message', { data: frame }))
     }
 
@@ -189,6 +197,21 @@ const fakeEventSource = (): void => {
       handler?.call(this, event)
 
       for (const listener of this.listeners.get(event.type) ?? []) listener.call(this, event)
+    }
+
+    /**
+     * Only an open source delivers, in the browser and here: a dropped one is reconnecting
+     * and a closed one is gone. Delivering anyway would let a spec drop the connection,
+     * dispatch, and assert a live update the app would never see in a browser.
+     */
+    private refuseUnlessOpen(attempted: string): void {
+      this.refuseWhenClosed(attempted)
+
+      if (this.readyState === CONNECTING) {
+        throw new Error(
+          `Cannot ${attempted} a subscription that has dropped and not reopened: ${this.url}`,
+        )
+      }
     }
 
     /**

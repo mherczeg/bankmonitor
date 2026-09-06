@@ -355,7 +355,8 @@ npx playwright test --ui          # pick specs, step through, read the trace
 
 The dev server starts and stops with the run, and an already-running one on `5173` is
 reused. **Nothing reaches the backend** — every request the app makes to `/api/` is
-answered by the spec — so these pass with no backend, no database and no seed data. There
+answered by the harness, in every spec whether or not that spec scripts one — so these pass
+with no backend, no database and no seed data. There
 is one browser, because these specs assert what the app does rather than what a rendering
 engine renders, and **no retries**, because every sequence is ordered by the spec rather
 than by a timer and a spec that only passes on the second attempt has a race in it.
@@ -364,7 +365,9 @@ than by a timer and a spec that only passes on the second attempt has a race in 
 
 Specs import from `e2e/harness/test`, which is Playwright's `test` with the two
 substitutions every spec here wants already made: the `api` fixture, and a fake event
-source installed before app code runs.
+source installed before app code runs. Both are in place for **every** spec, named or not —
+a spec that destructures neither still runs against the scripted network rather than the
+dev server's proxy.
 
 ```ts
 import { anAccount, aProblem, eventStream, expect, test } from '../harness/test'
@@ -422,8 +425,11 @@ assert the page reads settled.
 assertion. React's StrictMode mounts an effect, tears it down and mounts it again, so a
 subscribing component briefly leaves a closed source behind a live one; the helper binds to
 the newest *open* source, which is only reliable once that remount has happened. A dispatch
-on a source the app has already closed throws and names the URL, rather than being ignored
-and spending the spec's timeout.
+on a source that is not open — closed by the app, or dropped and not yet reopened — throws
+and names the URL, rather than being ignored and spending the spec's timeout. It is refused
+rather than delivered because a real connection in either state delivers nothing, and a
+spec that asserted a live update over a dropped one would be passing on an app a browser
+would leave stale.
 
 `e2e/smoke/` holds the one spec that proves the harness itself, against a fixture page that
 exists only because no screen fetches anything yet. It goes when the Transfer page carries

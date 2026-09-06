@@ -87,20 +87,36 @@ The alternative is letting it through to the real network, which would make a sp
 fail on whether a backend happened to be running on the developer's machine — the precise
 property this seam exists to remove.
 
+The route is registered for **every** spec, not only the ones that script an answer: the
+`api` fixture is `auto`, the same way and for the same reason the fake source is. Found
+reviewing this ticket, where it was not — a spec that never destructured `api` registered
+no route at all, and its requests went to the dev server and through its proxy to whatever
+backend was running. That is the failure this section rules out, arriving by the one door
+the fixture had left open. The smoke suite now carries a spec that scripts nothing and
+asserts the unscripted `404`, which fails against a running backend if the fixture ever
+stops being automatic.
+
 ## The fake source departs from `EventSource` in exactly one place
 
 The fake keeps the *shape* of a real connection, because the app's behaviour is written
 against it: a source opens asynchronously after construction rather than in its
-constructor, a closed source delivers nothing, and a dropped one goes back to `CONNECTING`.
+constructor, and neither a closed source nor a dropped one delivers — a dropped one goes
+back to `CONNECTING` and stays there until it is reopened.
 
 It departs in one place, deliberately. A real `EventSource` reconnects on a timer of its
 own; this one reopens when the spec says so. **That is the whole point** — it is what makes
 a reconnection test a sequence the spec orders rather than a wait on a clock, and it is the
 same reasoning that makes `retries: 0` correct below.
 
-**A dispatch on a closed source throws rather than being ignored.** Silently ignoring it
-would spend the spec's full timeout on an assertion that could never come true; throwing
-names the mistake in the line that made it.
+**A dispatch on a source that is not open throws rather than being ignored.** Silently
+ignoring it would spend the spec's full timeout on an assertion that could never come true;
+throwing names the mistake in the line that made it.
+
+The dropped half of that was a defect, found reviewing this ticket. The guard read `CLOSED`
+alone, so a message dispatched between `drop()` and `reopen()` still reached the app. A
+spec could drop the connection, dispatch, and assert a live update — and pass against an
+app that would show nothing in a browser, which is the one failure a fake exists in order
+not to have. It is fixed, and the spec that names it is in the smoke suite.
 
 ## StrictMode makes "the app's subscription" briefly ambiguous
 

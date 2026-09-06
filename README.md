@@ -31,7 +31,7 @@ see [`frontend/README.md`](frontend/README.md).
 cd frontend && npm test   # frontend
 ```
 
-Expect **202 passing backend tests** and **62 in the frontend**, with no Docker daemon
+Expect **297 passing backend tests** and **62 in the frontend**, with no Docker daemon
 involved. The backend suite runs on an in-memory H2 database; Testcontainers was rejected
 precisely so this command works on a clean machine.
 
@@ -202,7 +202,7 @@ build.
 
 ## What is built so far
 
-Tickets 01–17, 19–20, 24, 27 and 31–36 of 44: the skeleton, schema management, the package
+Tickets 01–17, 19–20, 24–25, 27 and 31–36 of 44: the skeleton, schema management, the package
 structure the domain code will be written into, the security chain in front of it, the error
 contract every endpoint will answer with, the value type every amount in the system is
 expressed in and the single conversion between currencies, the first entity and the first
@@ -211,12 +211,13 @@ and the locking rule the concurrency design rests on, the reservation that rule 
 the endpoint a client posts a Transfer to and the two it is read back from, the claim on an
 Idempotency Key and the duplicate resolution that turns that claim into an answer, the Check
 Ledger a Transfer has to clear before it settles, the one operation that answers a Check and
-moves the money, the third-party rate provider the resilience work will be aimed at, the
-table that keeps a committed change and the news of it from ever disagreeing, the frontend's
-shell, the generated API types that join the two halves, the frontend edge that turns Minor
-Units into decimals, the reading an operator gets of a failed request, the client half of the
-Idempotency Key, the stream message that is nothing but a cache invalidation, and the two
-ecosystem bets that had to be settled first. **Both bets won.**
+moves the money, the third-party Exchange Rate provider the resilience work is aimed at and
+the client that survives it, the table that keeps a committed change and the news of it from
+ever disagreeing, the frontend's shell, the generated API types that join the two halves, the
+frontend edge that turns Minor Units into decimals, the reading an operator gets of a failed
+request, the client half of the Idempotency Key, the stream message that is nothing but a
+cache invalidation, and the two ecosystem bets that had to be settled first.
+**Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type
@@ -567,6 +568,53 @@ the configuration back:
 a bounded thread pool that can deadlock under load — an inbound request holds a thread
 while waiting for a second thread to serve its own outbound call — which is what makes
 `spring.threads.virtual.enabled=true` load-bearing here rather than a nicety.
+
+## The client that talks to it expects it to misbehave
+
+**`ExchangeRateProvider` is a port with one method** — a rate for a Currency pair — and
+everything that makes an unreliable third party survivable sits behind it: the timeouts,
+the bounded retry, and the translation of the provider's bad days into failures this
+application has words for. The HTTP implementation is package-private, so no caller can
+name it and no caller has to. The stand-in above is reached over real HTTP, the same way a
+paid service would be, so **a provider that speaks the shape below is a property change**
+— one line of `application.properties` and nothing recompiled. That shape is
+`GET {base-url}/fx/rates?base=…&quote=…` answering `{"base","quote","rate"}`, and it is
+hard-coded: a provider that spells its path, its parameters or its JSON differently is a
+second implementation of the port rather than a property. Which is what the port is for —
+the timeouts, the retry and the error mapping below are stated once and inherited by both.
+
+| Property | Default | What it does |
+|---|---|---|
+| `payments.fx.base-url` | `http://localhost:8080/mock` | The provider's root, everything below which is its API and not ours. This is the substitution seam — a provider speaking the shape above is this one line. |
+| `payments.fx.connect-timeout` | `1s` | How long to wait for the provider to accept a connection. |
+| `payments.fx.read-timeout` | `2s` | How long to wait for its answer once it has. Set well above the stand-in's default latency, so raising that dial reaches the timeout path rather than a hung test. |
+| `payments.fx.max-retries` | `2` | Retries **after** the first attempt, so a provider that fails everything is called three times. |
+| `payments.fx.retry-delay` | `100ms` | The wait before the first retry, doubled for each one after it. |
+
+**None of those five has a fallback in code, deliberately.** The last two are read twice —
+once bound onto a settings record, once as a `${…}` placeholder inside the `@Retryable`
+annotation, which resolves against the environment and cannot see a default written on the
+record. Rather than keep two copies of one number, every default lives in
+`application.properties`, and deleting a line fails startup instead of quietly running a
+policy that differs from the one documented here.
+
+The policy itself, in one sentence: **a `5xx` or a connection that fails or goes quiet is
+retried up to the budget above, and everything else — a `4xx` above all — fails on the
+first attempt**, because a deterministic refusal asked three times is three refusals and
+one lie about how hard we tried. Both timeouts are set because without them "the provider
+is slow" has no upper bound, and a request parked forever is one holding an in-progress
+Idempotency Key. There is no cache and no circuit breaker: a breaker protects a scarce
+thread pool and virtual threads are not scarce, and a cache is a second source of truth for
+a number that is about to be written onto a Transfer. Both are recorded, with what it would
+take to add them, in [`docs/deferred.md`](docs/deferred.md).
+
+**When the budget runs out, the caller gets one failure whose whole meaning is "try again
+later"** — `ExchangeRateUnavailableException`, naming the pair and how many attempts the
+policy allows — and that is a different type from the one a refusal produces. The distinction is the point: a
+`503` with a `Retry-After` in answer to a request that will never succeed is worse advice
+than no advice, so only exhaustion becomes it. That the retries genuinely happened is
+asserted from Spring's own `MethodRetryEvent` rather than by counting requests, since a
+plain loop in the client would produce the same request count and the same green test.
 
 ## The frontend's types are generated, not written
 

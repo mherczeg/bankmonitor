@@ -1008,13 +1008,18 @@ line.
 Sources: `danvega.dev/blog/spring-boot-4-native-retry-support`; the `@Retryable`
 javadoc; the Moderne spring-retry → Framework 7 migration recipe.
 
+> **Built in [ticket 25](25-exchange-rate-client.md)**, which records why Framework 7's
+> missing `@Recover` forces the client into two beans, why neither retry setting can hold
+> its default on the `@ConfigurationProperties` record, and how the exhaustion failure is
+> kept distinct from a refusal that will never succeed.
+
 ---
 
 ## 28. The mock FX provider is a real HTTP endpoint inside the app
 
 `@Profile("mock-fx")`, e.g. `GET /mock/fx/rates?base=EUR&quote=HUF`, called over
-real HTTP by the real client. The client reads `fx.base-url` from configuration,
-so swapping in a real provider is a property change.
+real HTTP by the real client. The client reads `payments.fx.base-url` from
+configuration, so swapping in a real provider is a property change.
 
 **Rejected — a stub `@Bean` implementing the provider interface.** It puts the
 failure simulation *above* the HTTP client, so none of §27's timeouts, retries
@@ -1057,6 +1062,14 @@ nicety**, and it is worth one README sentence saying why.
 > bullet above — it named a `payments.api` package §30's layout never creates — adds
 > the published OpenAPI document as a sixth layer to exclude, and records why the
 > filter bullet had nothing to register.
+
+> The base-URL sentence above is a correction from **[ticket 25](25-exchange-rate-client.md)**:
+> it named `fx.base-url`, and every property in this application is under `payments.`.
+> That ticket also narrows "swapping in a real provider is a property change" — true of a
+> provider that speaks this wire shape, while one that speaks another is a second
+> implementation of the port — sharpens the `MockRestServiceServer` limitation named above
+> — the builder *replaces* the request factory, so the timeouts are absent from that seam
+> rather than merely bypassed — and records why WireMock still was not re-added.
 
 ---
 

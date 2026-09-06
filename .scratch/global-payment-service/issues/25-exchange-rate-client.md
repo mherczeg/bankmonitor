@@ -32,11 +32,11 @@ coverage while writing the suite, add a wire-level mock for that single test.
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A one-method port returns a rate for a Currency pair, with the transport behind it
-- [ ] Connect and read timeouts are configured and documented
-- [ ] `5xx` and timeouts are retried a bounded number of times; `4xx` is never retried
-- [ ] A test scripting `503, 503, 200` succeeds, and asserts via the retry event that a
+- [x] A one-method port returns a rate for a Currency pair, with the transport behind it
+- [x] Connect and read timeouts are configured and documented
+- [x] `5xx` and timeouts are retried a bounded number of times; `4xx` is never retried
+- [x] A test scripting `503, 503, 200` succeeds, and asserts via the retry event that a
       retry occurred
-- [ ] Exhausted retries surface as a distinct failure the caller can map, not a generic one
+- [x] Exhausted retries surface as a distinct failure the caller can map, not a generic one

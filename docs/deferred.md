@@ -368,6 +368,57 @@ after it.** If the timeout path turns out to need real coverage while writing
 §25's suite, re-adding WireMock for that single test is the answer — it is a
 test-scoped dependency, so it costs nothing the reviewer has to run.
 
+**Partly closed by [ticket 25](design-decisions/25-exchange-rate-client.md), and
+the reopening condition above was evaluated there and not met.** Two things
+changed. First, the *policy* branch turned out to be reachable without a
+wire-level server: `withException(new HttpTimeoutException(…))` reaches the
+client as the same `ResourceAccessException` a real read timeout raises, and
+`retriesAConnectionThatWentQuiet` asserts it is retried like a `503`. So the
+half of §27 that says "retry a connection that went quiet" is covered. Second,
+the reason the seam cannot carry the timeouts is now known precisely rather than
+described as altitude: `MockRestServiceServer`'s builder **replaces** the
+request factory it binds to (`injectRequestFactory` calls
+`restClientBuilder.requestFactory(…)`), so the configured connect and read
+timeouts are provably absent from that client rather than merely bypassed by it.
+
+**What is still deferred is the timing, and only the timing.** Nothing in the
+suite proves the client gives up at two seconds rather than at the provider's
+convenience. WireMock was not re-added for it, because a dependency bought to
+assert a duration that is itself a line in `application.properties` is a poor
+trade — and the branch it would have been bought for is already green.
+
+---
+
+## Caching exchange rates
+
+**Deferred.** Every Transfer that needs a rate fetches one. There is no cache in
+front of the provider and no shared quote between two requests made a second
+apart (design decisions §27).
+
+**Why deferred:** a legitimate want, declined on scope rather than on principle.
+§27 rejected it alongside the circuit breaker to keep the resilience work to
+what the task actually grades — timeouts, a bounded retry, and a failure the
+caller can act on — and a cache adds an eviction policy, a staleness bound and a
+second source of truth for a number this application is about to write into a
+row anyway.
+
+**What makes it safe to add later:** §15 already stores the fetch timestamp on
+the Transfer beside the rate, and
+[ticket 25](design-decisions/25-exchange-rate-client.md) made that timestamp
+this application's own clock reading rather than the provider's — so a Transfer
+settled from a cached quote still records when the quote was obtained, and a
+cached rate stays auditable. Nothing downstream would have to change to tell the
+two apart.
+
+**What it would take:** a caching decorator over `ExchangeRateProvider` — the
+port is an interface precisely so a second implementation can sit in front of the
+HTTP one — keyed on the currency pair, with a time-to-live chosen against the
+same clock as §14's check deadline so a cached quote can never outlive the window
+§15 reasons about. The decision that is not trivial is what a cache does during
+an outage: serving a stale rate is the whole reason to want one and is also this
+application quoting a price nobody is currently offering, which is a business
+decision rather than a technical one.
+
 ---
 
 ## Circuit breaker on the FX provider

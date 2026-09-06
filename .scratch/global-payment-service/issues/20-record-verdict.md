@@ -22,14 +22,14 @@ times, not three mechanisms.
 
 **Blocked by:** 19
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] All Checks approving settles the Transfer and moves money once
-- [ ] Settlement lowers the source balance and Reserved Amount and raises the destination
+- [x] All Checks approving settles the Transfer and moves money once
+- [x] Settlement lowers the source balance and Reserved Amount and raises the destination
       balance
-- [ ] A single rejection rejects the Transfer immediately, releases the reservation and
+- [x] A single rejection rejects the Transfer immediately, releases the reservation and
       moves no money
-- [ ] The same Verdict reported twice advances the Transfer exactly once
-- [ ] A Verdict on an already-terminal Transfer is refused
-- [ ] An end-to-end test creates a Transfer, records Verdicts and asserts both Accounts'
+- [x] The same Verdict reported twice advances the Transfer exactly once
+- [x] A Verdict on an already-terminal Transfer is refused
+- [x] An end-to-end test creates a Transfer, records Verdicts and asserts both Accounts'
       balances

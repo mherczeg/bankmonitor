@@ -235,6 +235,9 @@ below are its mechanics.
 
 > **Built in [ticket 11](11-transfer-entity.md)**, which put the four states in a
 > table and left every transition to the ticket that has a caller for it.
+> **[Ticket 20](20-record-verdict.md)** is that caller for `SETTLED` and
+> `REJECTED`, and records why both live behind one operation rather than beside
+> the Verdict that triggers them.
 
 ---
 
@@ -258,12 +261,20 @@ render. The ledger *is* the pending-state UI, the audit trail, and the test
 seam.
 
 Verdicts must be idempotent — a check reporting `APPROVED` twice must not
-advance anything twice. Same conditional update as §5.
+advance anything twice. The transition carries the conditional update of §5, but
+that guard is not what makes concurrent Verdicts safe: what closes the race is a
+pessimistic lock on the Transfer row, taken before the ledger is read. Two
+Verdicts that cannot see each other's uncommitted rows both decide to wait, and
+leave the Transfer `PENDING` for ever without either ever reaching an `UPDATE`.
 
 > **Built in [ticket 19](19-check-ledger-and-policy.md)**, which records why the
 > `status` column above became a nullable `verdict` — an unanswered check has no
 > verdict rather than a third one — and why the decision function refuses an
 > empty ledger instead of settling it.
+> **[Ticket 20](20-record-verdict.md)** corrected the idempotency claim above,
+> measuring that under the row lock the conditional update cannot fire, and gives
+> a Verdict arriving on a terminal Transfer its own refusal because the guard
+> cannot serve it.
 
 ---
 

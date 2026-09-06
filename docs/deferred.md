@@ -516,3 +516,29 @@ the decision (amount band, currency pair, destination), read under the same
 transaction as the Transfer so a policy change cannot land between the two writes.
 The ledger and the decision function need no change: they count rows and do not
 know how many there ought to be.
+
+---
+
+## A redelivered Verdict is refused rather than absorbed
+
+**Deferred.** A Check service delivers at least once, so the very Verdict that
+settled a Transfer will arrive a second time. It meets the terminal-status
+refusal before it reaches the ledger, and the redelivering caller gets
+`TransferNotPendingException` carrying `SETTLED`
+([ticket 20](design-decisions/20-record-verdict.md)) rather than a quiet
+acknowledgement. Nothing moves twice — the money movement is asserted once
+against both balances — so what is deferred is the *answer*, not the safety.
+
+**Why deferred:** absorbing the redelivery means reading the ledger before the
+refusal, finding that this Check already carries this Verdict, and returning the
+current status as though nothing had happened. That is friendlier to the
+reporter, and it buys the friendliness with a longer critical section under the
+Transfer's row lock and a second reading path into the ledger whose only purpose
+is to decide whether to refuse. Whether the friendliness is worth it depends on
+what the status code turns out to mean to a retrying client, which is ticket
+21's decision and not this one's.
+
+**What it would take:** a ledger read inside the refusal branch of
+`recordVerdict`, returning the Transfer's current status when the Check's row
+already carries the same Verdict and refusing otherwise. It is a change to one
+branch, and the branch is written so that it stays one.

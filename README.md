@@ -31,7 +31,7 @@ see [`frontend/README.md`](frontend/README.md).
 cd frontend && npm test   # frontend
 ```
 
-Expect **106 passing backend tests** and **6 in the frontend**, with no Docker daemon
+Expect **136 passing backend tests** and **6 in the frontend**, with no Docker daemon
 involved. The backend suite runs on an in-memory H2 database; Testcontainers was rejected
 precisely so this command works on a clean machine.
 
@@ -61,6 +61,7 @@ test that reads the accounts table would then start from someone else's fixtures
 |---|---|
 | [`GET /api/accounts`](http://localhost:8080/api/accounts) | Every account, with its balance and its Available Balance |
 | `POST /api/accounts` | Opens an Account in a given Currency with a starting balance |
+| `POST /api/transfers` | Requests a Transfer between two Accounts, reserving the funds on the source |
 | [`/actuator/health`](http://localhost:8080/actuator/health) | Health check, including H2 connectivity |
 | [`/v3/api-docs`](http://localhost:8080/v3/api-docs) | The OpenAPI document the frontend's types are generated from |
 | [`/swagger-ui/index.html`](http://localhost:8080/swagger-ui/index.html) | Browsable API |
@@ -87,21 +88,46 @@ $ curl -s -X POST localhost:8080/api/accounts -H 'Content-Type: application/json
 Those two `250000`s are the same number and not the same amount — €2,500.00 and 250,000 Ft.
 That is the point of the `MinorUnits` suffix, and the reason the demo set includes HUF.
 
+Requesting a Transfer takes an Idempotency Key header, and no Currency — the Transfer is
+denominated by its source Account, so a payload that named one could contradict it:
+
+```console
+$ curl -s -X POST localhost:8080/api/transfers -H 'Content-Type: application/json' \
+    -H 'X-Idempotency-Key: 8f14e45f-ceea-467a-9c1c-7c9a5b3f2d10' \
+    -d '{"fromAccountId":1,"toAccountId":2,"amountMinorUnits":10050}'
+{"id":1,"fromAccountId":1,"toAccountId":2,"status":"PENDING",
+ "debitedAmountMinorUnits":10050,"debitedAmountCurrency":"EUR",
+ "creditedAmountMinorUnits":10050,"creditedAmountCurrency":"EUR",
+ "createdAt":"2026-09-06T09:41:00Z"}
+```
+
+Nothing has moved: account 1 still holds its €2,500.00, with €100.50 of it now spoken for
+and its Available Balance down to €2,399.50. The Transfer is `PENDING` until its Checks
+come back.
+
+**Both Accounts have to be denominated in the same Currency.** A Transfer between two that
+are not is refused with `422` and a problem document naming both, until the ticket that
+fetches an Exchange Rate. Refused rather than written, because the amount to credit the
+destination with is the one figure this service cannot yet compute: a Transfer stored now
+would have to carry the source Account's Currency on both sides, which is a wrong number in
+the table rather than a missing one.
+
 That is the whole business API so far; the rest of `/v3/api-docs` is still ahead of the
 build.
 
 ## What is built so far
 
-Tickets 01–13, 16–19 and 31–34 of 44: the skeleton, schema management, the package
+Tickets 01–14, 16–19 and 31–34 of 44: the skeleton, schema management, the package
 structure the domain code will be written into, the security chain in front of it, the error
 contract every endpoint will answer with, the value type every amount in the system is
 expressed in and the single conversion between currencies, the first entity and the first
 table, the first endpoint that writes to it and the first that reads it back, the Transfer
 and the locking rule the concurrency design rests on, the reservation that rule protects,
-the claim on an Idempotency Key, the Check Ledger a Transfer has to clear before it
-settles, the frontend's shell, the generated API types that join the two halves, the
-frontend edge that turns Minor Units into decimals, the reading an operator gets of a
-failed request, and the two ecosystem bets that had to be settled first. **Both bets won.**
+the endpoint a client posts a Transfer to, the claim on an Idempotency Key, the Check
+Ledger a Transfer has to clear before it settles, the frontend's shell, the generated API
+types that join the two halves, the frontend edge that turns Minor Units into decimals, the
+reading an operator gets of a failed request, and the two ecosystem bets that had to be
+settled first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type
@@ -182,9 +208,10 @@ two refetches of unchanged data. It is also the first shape in `/v3/api-docs`, s
 on a renamed field is a TypeScript compile error in the frontend rather than an
 `undefined` at runtime.
 
-Every seeded account starts with nothing reserved, because reserving is what a Transfer
-does and transfers do not exist yet — so on a fresh `dev` start, Available Balance equals
-balance everywhere. That is the derivation working, not the demo data being flat.
+Every seeded account starts with nothing reserved, because reserving is what requesting a
+Transfer does and the seed writes accounts only — so on a fresh `dev` start, Available
+Balance equals balance everywhere, and stays that way until the first `POST /api/transfers`.
+That is the derivation working, not the demo data being flat.
 
 **The two Accounts a transfer touches are locked in ascending ID order, never by their
 role in the transfer.** Each is taken with its own `SELECT … FOR UPDATE`, in a loop over

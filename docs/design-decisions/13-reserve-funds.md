@@ -200,9 +200,12 @@ the rate comes from, and ticket 26 is where the credited amount stops being a
 copy of the debited one. A refusal added here is a rule ticket 26 has to
 *reinterpret* rather than delete, and ticket 13's brief is the concurrency claim.
 
-The hole is named in [deferred.md](../deferred.md) with its residual risk stated
-rather than left to be rediscovered: until ticket 26, the source Account's own
-books stay right and the destination side is wrong.
+The hole was named in `deferred.md` with its residual risk stated rather than left
+to be rediscovered: until ticket 26, the source Account's own books stay right and
+the destination side is wrong.
+
+> **Reversed by [ticket 14](14-request-transfer-endpoint.md)**, which put the
+> refusal back and answered the objection above.
 
 ---
 

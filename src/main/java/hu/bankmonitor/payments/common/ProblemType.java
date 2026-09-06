@@ -29,6 +29,22 @@ public enum ProblemType {
 
 	NOT_FOUND("not-found"),
 
+	/** Both sides of a Transfer named the same Account. */
+	SELF_TRANSFER("self-transfer"),
+
+	/** A Transfer named an Account that does not exist. Carries the ID that was wrong. */
+	UNKNOWN_ACCOUNT("unknown-account"),
+
+	/** The source Account's Available Balance does not cover the Transfer. Carries both figures. */
+	INSUFFICIENT_FUNDS("insufficient-funds"),
+
+	/**
+	 * The two Accounts are denominated differently, which this service cannot convert
+	 * between yet. Names a capability rather than a rule, because ticket 26 deletes it
+	 * rather than reinterpreting it.
+	 */
+	CROSS_CURRENCY_UNSUPPORTED("cross-currency-unsupported"),
+
 	/** The same idempotency key is being processed right now. Retryable, and says when. */
 	REQUEST_IN_PROGRESS("request-in-progress"),
 

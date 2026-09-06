@@ -21,9 +21,10 @@ import java.util.List;
  * {@code FlywayOwnsTheSchemaTest} holds both halves of that — no migration inserts rows,
  * and no runner writes any outside {@link #DEV_PROFILE}.
  *
- * <p>All three currencies, and two accounts in each of two of them, so that a
- * cross-currency transfer and a transfer between accounts of one currency are both
- * available to try without creating anything first. HUF is here for a reason beyond
+ * <p>All three currencies, and two accounts in each of two of them, so that a transfer
+ * between accounts of one currency and a cross-currency one — refused with {@code 422}
+ * until the Exchange Rate arrives — are both available to try without creating anything
+ * first. HUF is here for a reason beyond
  * variety: its Minor Units are not hundredths, so a display that divides by a hundred
  * regardless is visibly wrong on the accounts screen rather than off by a factor nobody
  * notices.

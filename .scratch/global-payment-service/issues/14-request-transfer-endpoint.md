@@ -17,11 +17,11 @@ A Transfer from an Account to itself is refused with `422` before any lock is ta
 
 **Blocked by:** 05, 13
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A valid request returns `201` with a `PENDING` Transfer
-- [ ] A missing Idempotency Key is `400`; a malformed one is `400`
-- [ ] A self-Transfer is `422` and no lock is taken
-- [ ] An unknown Account, a non-positive amount and a cross-Currency request each return a
+- [x] A valid request returns `201` with a `PENDING` Transfer
+- [x] A missing Idempotency Key is `400`; a malformed one is `400`
+- [x] A self-Transfer is `422` and no lock is taken
+- [x] An unknown Account, a non-positive amount and a cross-Currency request each return a
       problem document with the right type URN
-- [ ] Web-layer tests cover the status codes and problem bodies without a database
+- [x] Web-layer tests cover the status codes and problem bodies without a database

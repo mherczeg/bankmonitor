@@ -127,15 +127,4 @@ class ReservedFundsReachTheTableTest extends ReservationScenario {
 		assertThat(reservedAmountOf(SOURCE)).isZero();
 		assertThat(transferRows()).isEmpty();
 	}
-
-	/** The backstop under ticket 14's {@code 422}, reached only by a caller that skipped it. */
-	@Test
-	@DisplayName("a Transfer from an Account to itself is refused rather than locked twice")
-	void refusesATransferFromAnAccountToItself() {
-		assertThatThrownBy(() -> reservation.reserve(transferOf(10_00L, SOURCE, SOURCE)))
-				.isInstanceOf(IllegalArgumentException.class);
-
-		assertThat(reservedAmountOf(SOURCE)).isZero();
-		assertThat(transferRows()).isEmpty();
-	}
 }

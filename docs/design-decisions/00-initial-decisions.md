@@ -130,6 +130,10 @@ path is the `FAILED` one and a crash leaves `IN_PROGRESS`.
 > flip without naming it. The unrecoverable stale row is in
 > [deferred.md](../deferred.md).
 
+> **Phase 3 is built in [ticket 13](13-reserve-funds.md)** and reached over HTTP in
+> **[ticket 14](14-request-transfer-endpoint.md)**, whose transaction is the one ticket 16
+> widens to carry the idempotency record's flip in the same commit.
+
 ---
 
 ## 5. Duplicate resolution
@@ -166,6 +170,9 @@ distinct problem `type` URN (`urn:problem:request-in-progress` vs
 `urn:problem:idempotency-key-reused`, see §18), because a client may retry the
 first and must never retry the second.
 
+> **[Ticket 14](14-request-transfer-endpoint.md)** makes the key required at the endpoint
+> before any of this resolution exists, so no client is ever written against a version that
+> let them omit it.
 > **[Ticket 16](16-idempotent-execution.md)** built both traps — the conditional
 > update and the new transaction — and found that the second one has a lock cost
 > this section does not mention: `markFailed` has to be called *after* the failing
@@ -208,6 +215,8 @@ writes inside one request, that is what the database is for.
 > what evidence there can be for it before ticket 13 has two threads.
 > **[Ticket 13](13-reserve-funds.md)** has the two threads, and records what a
 > test has to do before they prove anything.
+> **[Ticket 14](14-request-transfer-endpoint.md)** adds the self-Transfer refusal this
+> section calls for, ahead of the lock rather than inside it.
 
 ---
 
@@ -529,6 +538,8 @@ distinguished by their `type` URN (`urn:problem:request-in-progress` vs
 > **[Ticket 09](09-create-account-endpoint.md)** widens that ticket's rule: a
 > body Jackson rejected *at a member* is a validation failure with an `errors`
 > entry, not `urn:problem:malformed-request`.
+> **[Ticket 14](14-request-transfer-endpoint.md)** adds the first slice's own refusals —
+> four `422` URNs — and settles where a slice's exception-to-status mapping lives.
 > **[Ticket 32](32-openapi-type-generation.md)** found that none of this reaches
 > `/v3/api-docs` unaided — the advice produces it, so springdoc has nothing to
 > introspect — and publishes the URNs and the document's shape from the enum.
@@ -672,6 +683,10 @@ adornment on the input.
 
 Sources: `tanstack.com/form/latest/docs/framework/react/guides/validation` and
 `.../submission-handling`.
+
+> **The server side of that payload is [ticket 14](14-request-transfer-endpoint.md)**, which
+> keeps `fromAccountId` / `toAccountId` on the wire against the domain's own *source* and
+> *destination*, and spells the amount `amountMinorUnits`.
 
 ---
 

@@ -1,5 +1,6 @@
 package hu.bankmonitor.payments.transfers;
 
+import hu.bankmonitor.payments.accounts.Account;
 import hu.bankmonitor.payments.accounts.AccountLocking;
 import hu.bankmonitor.payments.accounts.LockedAccounts;
 import hu.bankmonitor.payments.common.Money;
@@ -15,7 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
  * reason the three statements are not interchangeable:
  *
  * <ol>
+ * <li>refuse a self-Transfer, which the request decides on its own;
  * <li>lock both Accounts, ascending by ID, which {@link AccountLocking} owns;
+ * <li>refuse a cross-Currency Transfer, at the first moment both Currencies are known;
  * <li><em>then</em> read the source Account's Available Balance and test the amount against
  * it;
  * <li>write the reservation, the Transfer, and the Check Ledger the Transfer will be
@@ -40,12 +43,14 @@ import org.springframework.transaction.annotation.Transactional;
  * pessimistic locking affordable at all; {@code LockedPathTouchesOnlyTheDatabaseTest} names
  * this class and fails if anything it can reach would wait on a provider.
  *
- * <p><b>Same-Currency Transfers only, and not by a check.</b> Both amounts on the Transfer
- * are denominated by the source Account, so a Transfer between two Currencies is reserved
- * and written with the wrong Currency in the credited column rather than refused. That hole
- * is deliberate and named in {@code docs/deferred.md}: ticket 26 is where an Exchange Rate
- * gives the credited side a figure of its own, and a refusal added here now is a rule ticket
- * 26 would have to reinterpret rather than delete.
+ * <p><b>Same-Currency Transfers only, and refused rather than written.</b> Both amounts on
+ * the Transfer are denominated by the source Account, so a Transfer between two Currencies
+ * has no honest figure for the credited side. Step 3 refuses it; it does not sit later,
+ * because {@link Account#reserve} <em>is</em> the write and a refusal after it has already
+ * recorded the reservation it meant to prevent. What the refusal names is a capability this
+ * service lacks rather than a rule it keeps, so ticket 26 gives the credited side an
+ * Exchange Rate of its own and deletes the check along with {@link
+ * CrossCurrencyTransferNotSupportedException}.
  */
 @Service
 class FundsReservation {
@@ -83,12 +88,23 @@ class FundsReservation {
 	 *                                                                  Account's Available
 	 *                                                                  Balance does not
 	 *                                                                  cover the amount
-	 * @throws IllegalArgumentException if both IDs name the same Account
+	 * @throws SelfTransferNotAllowedException if both IDs name the same Account
+	 * @throws CrossCurrencyTransferNotSupportedException if the two Accounts are denominated
+	 *                                                   differently
 	 */
 	@Transactional
 	public Transfer reserve(ReservationRequest request) {
+		if (request.sourceAccountId() == request.destinationAccountId()) {
+			throw new SelfTransferNotAllowedException(request.sourceAccountId());
+		}
+
 		LockedAccounts locked =
 				accounts.lockForTransfer(request.sourceAccountId(), request.destinationAccountId());
+		if (locked.source().getCurrency() != locked.destination().getCurrency()) {
+			throw new CrossCurrencyTransferNotSupportedException(locked.source().getCurrency(),
+					locked.destination().getCurrency());
+		}
+
 		Money amount = new Money(request.amountMinorUnits(), locked.source().getCurrency());
 
 		locked.source().reserve(amount);

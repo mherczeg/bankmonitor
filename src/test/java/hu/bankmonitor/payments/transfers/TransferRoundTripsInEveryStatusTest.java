@@ -46,6 +46,10 @@ class TransferRoundTripsInEveryStatusTest {
 	@Autowired
 	private TransferRepository transfers;
 
+	/** The read side is a separate interface; {@link TransferQueries} says why. */
+	@Autowired
+	private TransferQueries storedTransfers;
+
 	private Long sourceAccountId;
 	private Long destinationAccountId;
 
@@ -62,7 +66,7 @@ class TransferRoundTripsInEveryStatusTest {
 		entityManager.flush();
 		entityManager.clear();
 
-		Transfer reopened = transfers.findById(id).orElseThrow();
+		Transfer reopened = storedTransfers.findById(id).orElseThrow();
 
 		assertThat(reopened.getStatus()).isEqualTo(TransferStatus.PENDING);
 		assertThat(reopened.getSourceAccountId()).isEqualTo(sourceAccountId);
@@ -84,7 +88,7 @@ class TransferRoundTripsInEveryStatusTest {
 		advanceTo(id, status);
 		entityManager.clear();
 
-		Transfer reopened = transfers.findById(id).orElseThrow();
+		Transfer reopened = storedTransfers.findById(id).orElseThrow();
 		assertThat(reopened.getStatus()).isEqualTo(status);
 		assertThat(entityManager.getEntityManager()
 				.createNativeQuery("SELECT status FROM transfers")

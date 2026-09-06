@@ -2,6 +2,7 @@ package hu.bankmonitor.payments;
 
 import hu.bankmonitor.payments.common.ProblemType;
 import org.jspecify.annotations.Nullable;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import tools.jackson.core.JacksonException.Reference;
@@ -78,9 +80,9 @@ class ProblemDocumentAdvice extends ResponseEntityExceptionHandler {
 	private static final String INVALID_VALUE = "Invalid value.";
 
 	/**
-	 * The types a JSON number has to be whole for. Every amount in this API is a count of
-	 * Minor Units, so a decimal arriving in one of these is a category error rather than a
-	 * rounding question.
+	 * The types a number arriving on the wire has to be whole for. Every amount in this API is
+	 * a count of Minor Units and every identifier is a {@code long}, so a decimal arriving in
+	 * one of these is a category error rather than a rounding question.
 	 */
 	private static final Set<Class<?>> WHOLE_NUMBER_TYPES = Set.of(
 			long.class, Long.class, int.class, Integer.class, short.class, Short.class, BigInteger.class);
@@ -140,12 +142,32 @@ class ProblemDocumentAdvice extends ResponseEntityExceptionHandler {
 		if (!(exception.getCause() instanceof MismatchedInputException rejected) || rejected.getPath().isEmpty()) {
 			return response;
 		}
-		return amend(response, problem -> {
-			problem.setType(ProblemType.VALIDATION_FAILED.uri());
-			problem.setDetail(INVALID_CONTENT_DETAIL);
-			problem.setProperty(VALIDATION_ERRORS,
-					List.of(new Violation(memberPathOf(rejected), messageFor(rejected.getTargetType()))));
-		});
+		return rejectedValue(response, memberPathOf(rejected), rejected.getTargetType());
+	}
+
+	/**
+	 * A query parameter or a path variable the framework could not convert at all — a status
+	 * name outside {@code TransferStatus}, a Transfer identifier that is not a number —
+	 * reported against the parameter that carried it, as any other rejected value is.
+	 *
+	 * <p>This is the same claim {@link #handleHandlerMethodValidationException} makes one step
+	 * earlier in the request. A conversion failure happens <em>before</em> any constraint on
+	 * the parameter runs, so without this override the {@code errors} member would depend on
+	 * whether a value was the wrong shape or merely out of range — a distinction the client
+	 * cannot see and cannot branch on.
+	 *
+	 * <p>The message is written here rather than taken from the exception: Spring's own text
+	 * quotes the rejected value back inside a sentence, and a form needs the name of the input
+	 * that carried it and what that input will take.
+	 */
+	@Override
+	protected ResponseEntity<Object> handleTypeMismatch(TypeMismatchException exception,
+			HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+		ResponseEntity<Object> response = super.handleTypeMismatch(exception, headers, status, request);
+		if (!(exception instanceof MethodArgumentTypeMismatchException rejected)) {
+			return response;
+		}
+		return rejectedValue(response, rejected.getName(), rejected.getRequiredType());
 	}
 
 	/**
@@ -197,6 +219,27 @@ class ProblemDocumentAdvice extends ResponseEntityExceptionHandler {
 			if (isUnnamed(problem)) {
 				problem.setType(typeOf(exception, status).uri());
 			}
+		});
+	}
+
+	/**
+	 * One rejected value, reported as a validation failure naming the member that carried it.
+	 *
+	 * <p>Shared by the two handlers above so that a value the framework could not convert and
+	 * a value the deserializer would not take produce the same document. They differ only in
+	 * where the member's name and its target type are read from, which is the whole of what
+	 * each caller passes.
+	 *
+	 * @param member the field, parameter or member path the rejected value arrived in
+	 * @param target the type it failed to become, or {@code null} when the framework did not
+	 *               say — {@link #messageFor} has the fallback wording
+	 */
+	private static @Nullable ResponseEntity<Object> rejectedValue(@Nullable ResponseEntity<Object> response,
+			@Nullable String member, @Nullable Class<?> target) {
+		return amend(response, problem -> {
+			problem.setType(ProblemType.VALIDATION_FAILED.uri());
+			problem.setDetail(INVALID_CONTENT_DETAIL);
+			problem.setProperty(VALIDATION_ERRORS, List.of(new Violation(member, messageFor(target))));
 		});
 	}
 

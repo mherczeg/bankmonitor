@@ -449,6 +449,13 @@ endpoint is a repository method and a controller mapping over the
 ways of loading one Account are decided at the same time rather than the second
 being modelled on the first by accident.
 
+**Precedent set.** [Ticket 15](design-decisions/15-list-transfers-endpoints.md)
+did exactly this for Transfers: `GET /api/transfers/{id}` and the `Location` on
+`POST /api/transfers` shipped together, in that order, rather than the header
+going out ahead of the resource it names. The rule above is therefore a followed
+rule rather than an untested preference — and the Account half stays deferred
+only because no screen asks for it, which is still true.
+
 ---
 
 ## API versioning
@@ -478,6 +485,17 @@ patterns are real.
 transfers — offset pagination skips and duplicates rows when new transfers are
 inserted while a user pages, which for a list that grows at the head is the
 common case, not the edge case.
+
+**The key already exists.** [Ticket 15](design-decisions/15-list-transfers-endpoints.md)
+built the Transfers listing, and it orders by `created_at DESC, id DESC` — the
+cursor key above, for the independent reason that without the tie break the list
+reshuffles itself between two refetches. So pagination is an addition to that
+query rather than a change of its order, and no client's idea of "newest first"
+moves when it arrives.
+
+**There is no index on `created_at`.** Deliberately left with this entry rather
+than added by ticket 15: the demo dataset is tens of rows, and the index wants
+designing against the real paging query rather than guessed at ahead of it.
 
 ---
 

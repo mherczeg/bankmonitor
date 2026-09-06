@@ -16,9 +16,9 @@ No pagination — deferred, with its reasoning recorded.
 
 **Blocked by:** 11
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Listing returns Transfers in all four states, newest first
-- [ ] The optional status filter narrows to one state and rejects an unknown value
-- [ ] Fetching one Transfer by ID returns it; an unknown ID is `404` as a problem document
-- [ ] Both responses carry the amounts as Minor Unit counts with their Currencies
+- [x] Listing returns Transfers in all four states, newest first
+- [x] The optional status filter narrows to one state and rejects an unknown value
+- [x] Fetching one Transfer by ID returns it; an unknown ID is `404` as a problem document
+- [x] Both responses carry the amounts as Minor Unit counts with their Currencies

@@ -14,6 +14,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -55,6 +56,9 @@ class TransferRequestContractTest {
 	private FundsReservation reservation;
 
 	@MockitoBean
+	private TransferLookup transfers;
+
+	@MockitoBean
 	private Clock clock;
 
 	@BeforeEach
@@ -78,6 +82,28 @@ class TransferRequestContractTest {
 		assertThat(result).bodyJson().extractingPath("$.toAccountId").isEqualTo(9);
 		assertThat(result).bodyJson().extractingPath("$.status").isEqualTo("PENDING");
 		assertThat(result).bodyJson().extractingPath("$.createdAt").isEqualTo(REQUESTED_AT.toString());
+	}
+
+	/**
+	 * Ticket 14 left the {@code Location} header off deliberately, because the resource it
+	 * would have addressed did not exist and a header pointing at a {@code 404} is worse than
+	 * its absence. Ticket 15 builds that resource, so the header arrives with it — the order
+	 * {@code docs/deferred.md} names for the Account's missing endpoint, applied here.
+	 *
+	 * <p>It is asserted against the identifier in the body rather than a literal, because the
+	 * two agreeing is the whole claim: a header a client can follow to the Transfer it just
+	 * created.
+	 */
+	@Test
+	@DisplayName("the 201 points at the created Transfer's own URL")
+	void pointsAtTheCreatedTransfersOwnUrl() {
+		ReservationRequest expected = new ReservationRequest(5L, 9L, 100_50L, REQUESTED_AT);
+		given(reservation.reserve(expected)).willReturn(pendingTransfer(31L, expected, Currency.EUR));
+
+		MvcTestResult result = request(VALID_PAYLOAD);
+
+		assertThat(result).hasStatus(HttpStatus.CREATED);
+		assertThat(result).hasHeader(HttpHeaders.LOCATION, "/api/transfers/31");
 	}
 
 	/**

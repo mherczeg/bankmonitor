@@ -37,8 +37,14 @@ class NothingButTheReservationCreatesATransferTest {
 	/**
 	 * By dependency rather than by call, because {@link TransferRepository} has exactly one
 	 * write method and a class that holds the repository at all is one edit away from
-	 * calling it. Matching the type also survives the query methods tickets 15, 20 and 23
-	 * will add to it, which a rule naming {@code save} would not.
+	 * calling it.
+	 *
+	 * <p>That strictness is what {@link TransferQueries} exists to pay for. Ticket 15 gave
+	 * the slice a read side, and rather than exempt it here — which would have conceded the
+	 * "one edit away" margin, and again for each later reader — the reads went onto an
+	 * interface of their own that does not declare {@code save}. So this rule still names
+	 * one class and still forbids the dependency outright, and a reader cannot write a
+	 * Transfer because it cannot name the method that would.
 	 */
 	private static final ArchRule ONLY_THE_RESERVATION_WRITES_A_TRANSFER = noClasses()
 			.that().doNotHaveFullyQualifiedName(FundsReservation.class.getName())

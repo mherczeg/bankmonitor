@@ -1,6 +1,7 @@
 package hu.bankmonitor.payments.transfers;
 
 import hu.bankmonitor.payments.common.Currency;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.Instant;
 
@@ -26,7 +27,19 @@ import java.time.Instant;
  * <p>The two Accounts are named {@code from} and {@code to} rather than by their roles,
  * matching {@link CreateTransferRequest}: a client reads the Transfer it just posted back
  * out of this shape, and one wire vocabulary is what makes that a recognisable round trip.
+ *
+ * <p><b>Every member is listed as required, because springdoc cannot work that out</b>, on
+ * {@code AccountResponse}'s precedent: it derives {@code required} from constraint
+ * annotations and a response is never validated, so an unannotated response record publishes
+ * a schema on which every member is optional — and ticket 32's generated types would then
+ * accept a mock that simply omits the status. {@code TransferListingTest} holds the list to
+ * this record's components, so adding a member and forgetting the list fails rather than
+ * quietly narrowing the contract.
  */
+@Schema(requiredProperties = {
+		"id", "fromAccountId", "toAccountId", "status",
+		"debitedAmountMinorUnits", "debitedAmountCurrency",
+		"creditedAmountMinorUnits", "creditedAmountCurrency", "createdAt"})
 record TransferResponse(
 		long id,
 		long fromAccountId,

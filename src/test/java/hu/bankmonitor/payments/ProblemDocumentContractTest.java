@@ -140,6 +140,29 @@ class ProblemDocumentContractTest {
 				.containsExactly("weight");
 	}
 
+	/**
+	 * The same claim for a parameter the framework could not even convert, which is a
+	 * different exception again and arrives before any constraint on it runs. Spring's own
+	 * detail for it quotes the rejected value back inside a sentence; what a form needs is the
+	 * name of the input that carried it, in the member every other rejection uses.
+	 */
+	@Test
+	@DisplayName("a parameter of the wrong type reports its field too, not only a rejected body")
+	void unconvertibleParameterReportsItsFieldToo() {
+		MvcTestResult result = mvc.get()
+				.uri(ProblemProbeController.PATH + ProblemProbeController.CONSTRAINED_PARAMETER)
+				.param("pageSize", "several")
+				.exchange();
+
+		assertThat(result).hasStatus(400);
+		assertThatIsAProblemDocument(result, ProblemType.VALIDATION_FAILED);
+		assertThat(result).bodyJson()
+				.extractingPath("$.errors[*].field").asInstanceOf(LIST)
+				.containsExactly("pageSize");
+		assertThat(result).bodyJson()
+				.extractingPath("$.errors[0].message").isEqualTo("must be a whole number");
+	}
+
 	@Test
 	@DisplayName("an unsupported media type is a problem document")
 	void unsupportedMediaTypeIsAProblemDocument() {

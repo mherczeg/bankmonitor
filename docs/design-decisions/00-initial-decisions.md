@@ -575,6 +575,13 @@ showing every status means a second word for "a transfer that has been
 recorded" earns nothing, so it survives only as the screen's label. See
 [CONTEXT.md](../../CONTEXT.md).
 
+> **[Ticket 15](15-list-transfers-endpoints.md)** builds both endpoints and turns
+> the reading above into an assertion: every status is listed, `?status=` narrows
+> to one, and `?status=` with no value is no filter rather than a rejected one.
+> The order is `created_at DESC, id DESC` — the tie break is part of the contract,
+> because without a total order the screen reshuffles itself between two refetches
+> of unchanged data.
+
 ---
 
 ## 20. No meta-framework: Vite + React, two processes
@@ -1131,4 +1138,10 @@ package-private; the **`@Transactional` method** stays public.
 > **Account creation is built in [ticket 09](09-create-account-endpoint.md)**,
 > whose `201` carries no `Location` header because no single-Account resource
 > exists for one to address.
+> **[Ticket 15](15-list-transfers-endpoints.md)** pays that debt on the Transfers
+> side: it builds `GET /api/transfers/{id}`, so the `201` from
+> `POST /api/transfers` now carries a `Location` — a relative reference, because an
+> absolute one is built from the request's `Host` and this app sits behind a proxy in
+> development. The Account half stays deferred, and stays deferred in that order:
+> the endpoint first, the header with it.
 

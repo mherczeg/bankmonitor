@@ -62,6 +62,8 @@ test that reads the accounts table would then start from someone else's fixtures
 | [`GET /api/accounts`](http://localhost:8080/api/accounts) | Every account, with its balance and its Available Balance |
 | `POST /api/accounts` | Opens an Account in a given Currency with a starting balance |
 | `POST /api/transfers` | Requests a Transfer between two Accounts, reserving the funds on the source |
+| [`GET /api/transfers`](http://localhost:8080/api/transfers) | Every Transfer in every status, newest first; `?status=` narrows it to one |
+| `GET /api/transfers/{id}` | One Transfer by the identifier the `201` above returns in its `Location` |
 | [`/actuator/health`](http://localhost:8080/actuator/health) | Health check, including H2 connectivity |
 | [`/v3/api-docs`](http://localhost:8080/v3/api-docs) | The OpenAPI document the frontend's types are generated from |
 | [`/swagger-ui/index.html`](http://localhost:8080/swagger-ui/index.html) | Browsable API |
@@ -104,6 +106,26 @@ $ curl -s -X POST localhost:8080/api/transfers -H 'Content-Type: application/jso
 Nothing has moved: account 1 still holds its €2,500.00, with €100.50 of it now spoken for
 and its Available Balance down to €2,399.50. The Transfer is `PENDING` until its Checks
 come back.
+
+That `201` also carries a `Location`, which is the second endpoint below — so a client can
+follow the header rather than assemble the URL from the body:
+
+```console
+$ curl -si -X POST localhost:8080/api/transfers ... | grep -i '^location:'
+location: /api/transfers/1
+
+$ curl -s localhost:8080/api/transfers/1
+{"id":1,"fromAccountId":1,"toAccountId":2,"status":"PENDING",...}
+
+$ curl -s 'localhost:8080/api/transfers?status=PENDING'
+[{"id":1,"fromAccountId":1,"toAccountId":2,"status":"PENDING",...}]
+```
+
+**The listing shows every status, not only the settled ones.** A `PENDING` Transfer that
+appeared nowhere would tell an operator their money had vanished, which is the one thing an
+asynchronous lifecycle must not do. `?status=` narrows to one; `?status=` with nothing after
+it is no filter rather than an error, so a form that always submits its fields still works.
+A status this domain has no name for is a `400` naming the four that exist.
 
 **Both Accounts have to be denominated in the same Currency.** A Transfer between two that
 are not is refused with `422` and a problem document naming both, until the ticket that

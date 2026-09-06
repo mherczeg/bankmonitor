@@ -11,9 +11,9 @@ function over a plain object.
 
 **Blocked by:** 31
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A pure function maps a stream message to the query keys to invalidate
-- [ ] A settled Transfer invalidates that Transfer, the transfers list and the accounts list
-- [ ] An unknown event type yields no keys rather than throwing
-- [ ] The module imports nothing from React and needs no event-source polyfill to test
+- [x] A pure function maps a stream message to the query keys to invalidate
+- [x] A settled Transfer invalidates that Transfer, the transfers list and the accounts list
+- [x] An unknown event type yields no keys rather than throwing
+- [x] The module imports nothing from React and needs no event-source polyfill to test

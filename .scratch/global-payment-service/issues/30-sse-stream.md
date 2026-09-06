@@ -26,3 +26,18 @@ assumption.
 - [ ] Settlement, rejection and expiry each emit a message
 - [ ] Multiple concurrent subscribers each receive every message
 - [ ] A disconnecting client is cleaned up and does not leak an emitter
+
+## Comments
+
+**Ticket 36 wrote this endpoint's contract ahead of it.** The browser side is built and
+tested against these three names, carried as JSON on the **default** event (not as named
+SSE events — see `docs/design-decisions/36-sse-event-module.md` for why):
+
+```
+{"type":"TRANSFER_SETTLED","transferId":7}
+{"type":"TRANSFER_REJECTED","transferId":7}
+{"type":"TRANSFER_EXPIRED","transferId":7}
+```
+
+`frontend/src/api/events.ts` ignores anything else, so a name that does not match is a
+live-update feature that silently does nothing.

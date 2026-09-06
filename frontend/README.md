@@ -58,7 +58,9 @@ src/
   routeTree.gen.ts    generated — see below
   money.ts            the decimal form of an amount, in and out — see below
   api/                the API's types, the query client, its retry rule, how a failure
-                      reads to an operator, and where Idempotency Keys come from
+                      reads to an operator, where Idempotency Keys come from, the
+                      names cached answers are filed under, and what a stream
+                      message invalidates
   routes/             one file per route; the file tree is the URL tree
 ```
 
@@ -238,6 +240,67 @@ Keys are version 4 UUIDs, which is all the backend accepts — anything else is 
 plain HTTP from anything else, a LAN address during a demo being the realistic case,
 `crypto.randomUUID` is `undefined` and submitting a Transfer throws. Ticket 35's design
 record has the rest.
+
+## The event stream, and the only thing the app does with one
+
+A message off the stream carries an event type and a Transfer ID, and nothing else. It is
+a **hint that something changed**, not the change itself — the REST endpoint is where the
+new state is read from. So the entire frontend handling of the stream is one pure
+function, `src/api/events.ts`:
+
+```ts
+source.onmessage = (message) => {
+  for (const key of invalidationsFor(message.data)) queryClient.invalidateQueries({ queryKey: key })
+}
+```
+
+There is no merging, no reconciling a message against cached state, and no ordering logic,
+because a hint has no content to merge. A Transfer's status only ever moves one way, so a
+refetch overtaken by a later invalidation simply happens again.
+
+**The function takes the frame, not a parsed object.** Parsing is the first thing that
+fails on a stream — a keep-alive comment, a proxy's error page, a frame cut in half by a
+dropped connection — and a message handler is the worst place to catch that. Owning the
+parse makes the function total: anything the wire can deliver maps to a list of keys, and
+anything unreadable maps to none. An event type this build does not know yields no keys
+rather than throwing, which is what lets the backend add one without breaking a deployed
+frontend.
+
+The three types are the contract the stream endpoint has to meet, and nothing generates
+them — the OpenAPI document says nothing about a stream, so they are written out here and
+in the emitter:
+
+```
+TRANSFER_SETTLED   TRANSFER_REJECTED   TRANSFER_EXPIRED
+```
+
+Each of them invalidates the same three keys: that Transfer, the Transactions list and the
+Accounts list. That is not an unfinished table — **every terminal state releases the source
+Account's reservation**, so an Available Balance moves whether the Transfer settled or was
+refused, and only settlement moves it the way the operator hoped.
+
+## Query keys, and the one that would have invalidated everything
+
+`src/api/queryKeys.ts` names every cached answer, in one place because two sides have to
+agree: the screen that files an answer under a key, and the event module that says it is
+stale. A key written out at both can drift, and **a drifted key fails silently** — the page
+keeps showing what it loaded and nothing refetches.
+
+| Cache entry | Key |
+|---|---|
+| every Account | `['accounts']` |
+| every Transfer | `['transfers', 'list']` |
+| one Transfer | `['transfers', 'detail', id]` |
+
+A key is a **path**, and invalidating one invalidates everything beneath it. The list and
+the detail are therefore separate branches rather than a parent and its children: under the
+obvious `['transfers']` and `['transfers', id]`, invalidating the Transactions list would
+mark every Transfer page the operator had opened stale and refetch the active ones. It
+looks correct and it never fails — it just does that forever.
+
+A Transfer is named in a key the way the URL names it, as a string, so the page's key and
+an event's key are one key. The conversion happens in `events.ts`, in the direction that
+cannot fail: `String(7)` is `'7'`, where `Number(id)` of a mistyped URL is `NaN`.
 
 ## The API types, and when to regenerate them
 

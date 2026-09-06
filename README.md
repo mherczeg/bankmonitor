@@ -117,7 +117,7 @@ build.
 
 ## What is built so far
 
-Tickets 01–14, 16–19 and 31–35 of 44: the skeleton, schema management, the package
+Tickets 01–14, 16–19 and 31–36 of 44: the skeleton, schema management, the package
 structure the domain code will be written into, the security chain in front of it, the error
 contract every endpoint will answer with, the value type every amount in the system is
 expressed in and the single conversion between currencies, the first entity and the first
@@ -126,8 +126,9 @@ and the locking rule the concurrency design rests on, the reservation that rule 
 the endpoint a client posts a Transfer to, the claim on an Idempotency Key, the Check
 Ledger a Transfer has to clear before it settles, the frontend's shell, the generated API
 types that join the two halves, the frontend edge that turns Minor Units into decimals, the
-reading an operator gets of a failed request, the client half of the Idempotency Key, and
-the two ecosystem bets that had to be settled first. **Both bets won.**
+reading an operator gets of a failed request, the client half of the Idempotency Key, the
+stream message that is nothing but a cache invalidation, and the two ecosystem bets that had
+to be settled first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type

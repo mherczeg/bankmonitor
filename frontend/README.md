@@ -56,6 +56,7 @@ changing: the browser still talks only to the dev server, so
 src/
   main.tsx            mounts the router inside the query client, imports Bootstrap once
   routeTree.gen.ts    generated — see below
+  money.ts            the decimal form of an amount, in and out — see below
   api/                the API's types, the query client and its retry rule
   routes/             one file per route; the file tree is the URL tree
 ```
@@ -91,6 +92,54 @@ next to the component that uses it (`src/routes/shell.module.css` is the first).
 optimisation — a gzip encoder holds a two-line event until it has enough bytes to emit,
 so a compressed event stream arrives as one clump when the connection closes, and only in
 development. The line in `vite.config.ts` puts that failure out of reach.
+
+## Amounts, and the only module that knows about the hundred
+
+Every amount on the wire is a whole count of **Minor Units** — cents for EUR and USD,
+fillér for HUF, where a forint has none — because the backend holds money as a `long`
+count and a decimal fraction of a Minor Unit is not representable in it. The browser
+does not get to decide otherwise: `balanceMinorUnits: 10050` means €100.50 on a EUR
+Account and 10050 Ft on a HUF one.
+
+`src/money.ts` is the one place that knows which, and so the only place in the frontend
+that multiplies or divides by a hundred. Its surface:
+
+| Export | Reading it |
+|---|---|
+| `formatAmount(minorUnits, currency)` | `10050, 'EUR'` → `'100.50'`; `10050, 'HUF'` → `'10050'` |
+| `parseAmount(input, currency)` | `'100.50', 'EUR'` → `{ ok: true, minorUnits: 10050 }`, or `{ ok: false, reason }` |
+| `decimalPlacesIn(currency)` | 2 for EUR and USD, 0 for HUF |
+| `CURRENCIES` | the three, at runtime — the `Currency` type is generated and compile-time only |
+| `ParsedAmount`, `AmountRejection` | the parse result, and the four names a refusal can carry |
+
+**The two functions are exact inverses over every amount that is valid to submit,
+and that is a requirement rather than a coincidence.** A formatted amount is not only
+read: it goes into a form field an operator then edits, on the create-Account and
+transfer screens both. So the output
+carries no currency symbol, no thousands separator and no locale — just the digits and,
+where the Currency has decimals, a full stop. Anything else would have to be stripped
+back off before the string could be parsed, and the separator that would need stripping
+is a comma in one locale and a full stop in another. The screens name the Currency
+themselves, beside the amount.
+
+Neither direction does arithmetic on the value. Both work on the digits of the string,
+because `Number('100.50') * 100` is `10049.999999999998` and the rounding step that
+fixes it is a rounding step in the module whose contract is that it does not round.
+
+**A refusal says which of four things is wrong** — `not-a-number`, `too-many-decimals`,
+`not-positive`, `too-large` — so a form can tell an operator what to fix rather than
+that something is wrong. Scientific notation, a comma decimal separator and a thousands
+separator are all refused rather than guessed at, and so are zero and negatives —
+which is the one asymmetry between the two functions: `formatAmount` renders a zero
+balance and would render a negative difference, and neither is a sum anyone can send,
+so neither reads back. `too-large` is the one refusal that is not
+about the operator: a JavaScript number counts exactly only to 2^53 − 1 where the
+backend's `long` goes far further, and an amount past that bound would arrive at the
+server as a different number than the one submitted.
+
+Adding a Currency is therefore a one-line change in this file, and the compiler finds
+it: the decimals table is keyed by the generated `Currency` type, so a fourth Currency
+appearing in `schema.gen.ts` fails the build until it has decimals here.
 
 ## The API types, and when to regenerate them
 

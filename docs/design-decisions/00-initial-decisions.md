@@ -441,6 +441,10 @@ Hibernate 7, but a wrong assumption here re-shapes every entity.
 > the result rounds to zero.
 > **[Ticket 09](09-create-account-endpoint.md)** puts the first such field on the
 > wire and changes the suffix above: `…MinorUnits`, not `…Minor`.
+> The frontend edge this section reserves — form parsing and display — is
+> **[ticket 33](33-money-format-module.md)**, which found that the invertibility a
+> form field needs rules out `Intl`'s currency formatting, and that a `long` count
+> has a ceiling in the browser that it does not have in the JVM.
 
 ---
 
@@ -744,6 +748,9 @@ render — deterministically, with no `waitForTimeout`. True E2E goes to
 > **Vitest arrived in [ticket 31](31-frontend-toolchain.md)**, ahead of the
 > tickets that assume it, and needs no configuration: every module on the
 > extraction list runs in the default Node environment.
+> **[Ticket 33](33-money-format-module.md)** built the first module on that list,
+> and made the rule an assertion rather than a convention: `money.test.ts` reads
+> its own subject's source and pins its import list.
 
 ---
 

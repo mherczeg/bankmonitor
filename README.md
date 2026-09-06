@@ -92,13 +92,15 @@ build.
 
 ## What is built so far
 
-Tickets 01–12, 31 and 32 of 44: the skeleton, schema management, the package structure the
-domain code will be written into, the security chain in front of it, the error contract
+Tickets 01–13, 16 and 31–33 of 44: the skeleton, schema management, the package structure
+the domain code will be written into, the security chain in front of it, the error contract
 every endpoint will answer with, the value type every amount in the system is expressed in
 and the single conversion between currencies, the first entity and the first table, the
 first endpoint that writes to it and the first that reads it back, the Transfer and the
-locking rule the concurrency design rests on, the frontend's shell, the generated API types
-that join the two halves, and the two ecosystem bets that had to be settled first.
+locking rule the concurrency design rests on, the reservation that rule protects, the claim
+on an Idempotency Key, the frontend's shell, the generated API types that join the two
+halves, the frontend edge that turns Minor Units into decimals, and the two ecosystem bets
+that had to be settled first.
 **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
@@ -125,7 +127,10 @@ differing currencies. `BigDecimal` was rejected not for drift (it is exact) but 
 is unconstrained — nothing stops a fraction of a fillér being representable — and because
 its `equals` compares scale, so the same amount written two ways compares unequal. The
 per-currency decimal places (2 for EUR and USD, 0 for HUF) are read at the edges that
-parse and display an amount, and nowhere else: **the core never divides by a hundred.**
+parse and display an amount, and nowhere else: **the core never divides by a hundred.** On
+the browser side that edge is a single module, `frontend/src/money.ts`, whose two functions
+are exact inverses because the string it renders is also what an operator edits in a form
+field — which is why it renders `100.50` and not `€100.50`.
 
 **Flyway owns the schema** and Hibernate runs on `ddl-auto=validate`, from before the
 first table existed rather than baselined at the end. Each slice ships the migration for

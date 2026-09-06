@@ -47,7 +47,7 @@ export const rejectedFieldsIn = (failure: unknown): RejectedFields => {
 
   for (const { field, message } of rejectionsIn(failure)) {
     if (field === null) overall.push(message)
-    else byField.set(field, alongside(byField.get(field), message))
+    else byField.set(field, andAlso(byField.get(field), message))
   }
 
   return { byField, overall }
@@ -58,7 +58,7 @@ export const rejectedFieldsIn = (failure: unknown): RejectedFields => {
  * first rather than replacing it — otherwise an operator fixes one and is told about the
  * next on the round trip after.
  */
-const alongside = (said: string | undefined, message: string): string =>
+const andAlso = (said: string | undefined, message: string): string =>
   said === undefined ? message : `${said}, ${message}`
 
 const rejectionsIn = (failure: unknown): Rejection[] => {

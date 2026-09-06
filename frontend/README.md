@@ -420,9 +420,12 @@ the `Location` header that would name it are deferred together in `../docs/defer
 
 Above the list, `src/routes/-newAccountForm.tsx` is the other half of the screen: a
 Currency, an opening balance in the decimal form that Currency is written in, and a button.
-Everything it is judged by lives in `src/accountSchema.ts`, including the conversion — the
-component's only contact with the amount is the `newAccountSchema.parse(value)` in its
-submit handler, which is where the transform that validation discarded is asked for.
+Everything it is judged by lives in `src/accountSchema.ts` — the rules, the wording, the
+conversion, and the map from a refused wire member to the field that can be corrected. The
+component is markup and two calls into that module, so the form's behaviour is unit tested
+without a form being rendered. Its only contact with the amount is the
+`newAccountSchema.parse(value)` in its submit handler, which is where the transform that
+validation discarded is asked for.
 
 **The decimal rule follows the chosen Currency, so it is a cross-field rule.** `100.50` is
 an amount in EUR and is fillér that do not exist in HUF, so the check sits on the object
@@ -434,7 +437,7 @@ same reason: once in the `<select>` that chooses it, and again as an adornment o
 input, so the rule and the denomination it comes from are in one glance.
 
 **A server-side refusal is shown per field.** `problemToMessage` writes the heading, and
-`rejectedFieldsIn` puts the service's own sentence under each input it named —
+`serverRefusalIn` puts the service's own sentence under each input it named —
 `openingBalanceMinorUnits` walked back to the `openingBalance` field the operator can
 actually correct. Those messages are derived from the failed mutation rather than written
 into the form's error state, so editing anything clears them along with the *Account N is

@@ -140,11 +140,13 @@ would never show.
 
 **A refused member with no field here is shown, not dropped.** The wire says
 `openingBalanceMinorUnits` and the input holds `openingBalance` — ticket 09 put the unit in
-the name and ticket 33 keeps the decimal in the field — so the form carries the one map that
-walks the two back together. Anything it cannot place, including the contract's
-`field: null`, is listed under the heading instead. A message nobody sees is worse than a
-message in the wrong place, and silence here would be the frontend deciding an operator does
-not need to know why.
+the name and ticket 33 keeps the decimal in the field — so something has to walk the two
+back together. That map lives in `accountSchema.ts` beside the rules, not in the component:
+§24's rule is that logic goes in a plain module and is unit tested there, and "which field
+does this refusal belong to" is logic. The component is left with markup and two calls.
+Anything the map cannot place, including the contract's `field: null`, is listed under the
+heading instead. A message nobody sees is worse than a message in the wrong place, and
+silence here would be the frontend deciding an operator does not need to know why.
 
 ## The wording is the module's on the way out and the service's on the way in
 

@@ -876,14 +876,14 @@ render — deterministically, with no `waitForTimeout`. True E2E goes to
 > scripted answers in one mutable table behind one route handler rather than
 > re-registering a route per answer as step 2 above reads. It also names the glob that
 > swallows the app's own `src/api/` modules, reproduced rather than reasoned about.
-> **[Ticket 39](39-create-account-form.md)** adds `accountSchema.ts` to the extraction
-> list above — the transfer schema's sibling, arriving first — and gives the harness the
-> two calls a form needs: an answer for a `POST`, and the body the browser actually sent,
-> which is the only place a decimal → Minor Unit conversion can be caught getting it wrong.
 > **[Ticket 38](38-accounts-list-screen.md)** is the first screen to carry its own spec,
 > and found that "real focus and blur" is not free in a headless browser: Chromium removed
 > `Emulation.setPageVisibilityState`, so the harness redefines `document.visibilityState`
 > and dispatches `visibilitychange` on `window`, in that order.
+> **[Ticket 39](39-create-account-form.md)** adds `accountSchema.ts` to the extraction
+> list above — the transfer schema's sibling, arriving first — and gives the harness the
+> two calls a form needs: an answer for a `POST`, and the body the browser actually sent,
+> which is the only place a decimal → Minor Unit conversion can be caught getting it wrong.
 
 ---
 

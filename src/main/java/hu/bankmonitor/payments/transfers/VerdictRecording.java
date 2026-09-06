@@ -29,7 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <li><em>then</em> read the status, and refuse a Transfer that has already finished;
  * <li>answer the Check and ask the ledger what follows;
  * <li>on a decision that ends the Transfer, lock both Accounts, claim the transition, and
- * move the money.
+ * move the money;
+ * <li>announce the status the Transfer reached, which {@link LifecycleHints} defers until
+ * this transaction has committed.
  * </ol>
  *
  * <p>Step 1 is what makes concurrent Verdicts safe — not the conditional update in step 4,
@@ -62,10 +64,14 @@ class VerdictRecording {
 
 	private final CheckLedger ledger;
 
-	VerdictRecording(AccountLocking accounts, TransferTransitions transfers, CheckLedger ledger) {
+	private final LifecycleHints hints;
+
+	VerdictRecording(AccountLocking accounts, TransferTransitions transfers, CheckLedger ledger,
+			LifecycleHints hints) {
 		this.accounts = accounts;
 		this.transfers = transfers;
 		this.ledger = ledger;
+		this.hints = hints;
 	}
 
 	/**
@@ -87,6 +93,11 @@ class VerdictRecording {
 	 * ledger before the refusal to find out whether this Check had already given this answer,
 	 * which buys a friendlier response for a longer critical section.
 	 *
+	 * <p>The announcement is made once, at the end, against the status this method is about to
+	 * return, rather than in each branch that produced one. {@link LifecycleHints} decides
+	 * which statuses are worth telling a browser about, so a branch cannot forget to announce
+	 * and {@code WAIT} needs no special case here.
+	 *
 	 * @return {@code PENDING} while any Check is still outstanding, otherwise the terminal
 	 *         status this Verdict moved the Transfer to
 	 * @throws UnknownTransferException     if no Transfer has that ID
@@ -104,11 +115,14 @@ class VerdictRecording {
 		}
 
 		LedgerDecision decision = ledger.record(transferId, check, verdict);
-		return switch (decision) {
+		TransferStatus status = switch (decision) {
 			case SETTLE -> settle(transfer);
 			case REJECT -> reject(transfer);
 			case WAIT -> TransferStatus.PENDING;
 		};
+
+		hints.announce(transferId, status);
+		return status;
 	}
 
 	/**

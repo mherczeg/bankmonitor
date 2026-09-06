@@ -82,3 +82,17 @@ _Avoid_: Lock, lease, reservation
 **Outbox Event**:
 A record that something happened to a Transfer, written as part of the same change that caused it and delivered to other services afterwards. Its existence is guaranteed by the change it describes.
 _Avoid_: Message, Notification, Domain event
+
+### Live updates
+
+**Hint**:
+What the Event Stream sends a browser: an event type and a Transfer ID, and nothing else. A Hint carries no truth of its own — a browser answers one by refetching — which is why it is only ever sent once the change it describes has committed. It is the deliberate opposite of an Outbox Event, which carries the payload its reader needs and is written *inside* the change rather than after it. On the wire a Hint travels as one SSE *message*, which is the one sense in which that word is not the thing to avoid here.
+_Avoid_: Domain event, Notification, Update, Push
+
+**Event Stream**:
+The one server-sent-events connection a browser holds open to receive Hints. One stream carries every Transfer's Hints rather than one stream per Transfer, so a Subscriber hears about all of them and decides for itself which it cares about. It has no replay, no buffer and no catch-up, so a dropped connection costs one refetch and nothing more.
+_Avoid_: Channel, Feed, Socket
+
+**Subscriber**:
+One browser currently holding the Event Stream open. It is not registered against a Transfer or a user — there is no identity here to scope by — and it is dropped when a write to it fails, which is how a closed tab is normally noticed.
+_Avoid_: Listener, Watcher, Session

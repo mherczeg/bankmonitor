@@ -261,7 +261,7 @@ build.
 
 ## What is built so far
 
-Tickets 01–17, 19–22, 24–27 and 31–36 of 44: the skeleton, schema management, the package
+Tickets 01–17, 19–22, 24–27 and 30–36 of 44: the skeleton, schema management, the package
 structure the domain code will be written into, the security chain in front of it, the error
 contract every endpoint will answer with, the value type every amount in the system is
 expressed in and the single conversion between currencies, the first entity and the first
@@ -277,8 +277,9 @@ Currencies and carries the rate it was quoted at, the table that keeps a committ
 the news of it from ever disagreeing, the frontend's shell, the generated API types that join
 the two halves, the frontend edge that turns Minor Units into decimals, the reading an
 operator gets of a failed request, the client half of the Idempotency Key, the stream message
-that is nothing but a cache invalidation, and the two ecosystem bets that had to be settled
-first. **Both bets won.**
+that is nothing but a cache invalidation and the one endpoint that sends it once the change it
+describes has committed, and the two ecosystem bets that had to be settled first. **Both bets
+won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type
@@ -538,6 +539,43 @@ away, so a test can drive a poll by hand and assert what a failure leaves behind
 racing a poller to the row. Retry with backoff, a dead-letter path, ordering between two
 events on one Transfer, and archival of a table that only grows are deferred with reasoning
 in [`docs/deferred.md`](docs/deferred.md).
+
+**One event stream serves every browser, and a message on it carries nothing but a hint.**
+`GET /api/events/stream` is a single server-sent-events endpoint rather than one per
+Transfer, and everything it sends is `{"type":"TRANSFER_SETTLED","transferId":7}` — an
+event type and a Transfer ID, and no more. That emptiness is the design rather than a
+shortcut taken: a message carrying only a cache key is a message the browser cannot merge
+into anything, reconcile against anything, or need in order, so the frontend's entire
+handling of the stream is one pure function from a frame to a list of stale query keys.
+*The stream carries hints; the REST endpoint carries truth.* It is the deliberate opposite
+of what the outbox sends, for the reason above: a service that had to call back for the
+amount is the coupling the outbox exists to avoid, while a browser calling back for the
+amount is a request to an API it is already holding a connection open to.
+
+**There is no catch-up — no replay, no buffer, no `Last-Event-ID` — and what pays for that
+is that a hint is only ever sent after the change it describes has committed.** A browser
+answers a hint by refetching, so one that overtook its own commit would send the browser to
+read the row as it was and never tell it again: a page permanently showing the old status,
+with the backend correct, the frontend correct, and nothing in any log to say what
+happened. So the send is not a call. The operation that settles a Transfer publishes an
+application event from inside its transaction and the stream listens for one *after* that
+transaction commits, which makes the ordering structural instead of a comment — a
+settlement that rolls back sends nothing. The same indirection is what keeps a socket
+write off the path holding row locks on a Transfer and two Accounts, which is the hazard
+`LockedPathTouchesOnlyTheDatabaseTest` exists to forbid: writing to an unknown number of
+possibly-slow browsers is the clearest example there is of a lock waiting on something
+slower than the database.
+
+Given no catch-up, a dropped connection costs one refetch and nothing else, which is why
+the connection is bounded at fifteen minutes rather than held open indefinitely — the
+bound is there so a browser that vanished without closing its socket is not registered for
+ever. A subscription writes one SSE comment immediately, and that is load-bearing rather
+than a greeting: Spring hands the container an emitter and writes nothing itself, so
+without it the response never leaves Tomcat's buffer and a browser's `onopen` — the event
+its convergence refetch hangs off — would fire whenever some unrelated Transfer next
+finished instead of when it subscribed. Scoped subscriptions and running this stream
+across more than one instance are deferred with reasoning in
+[`docs/deferred.md`](docs/deferred.md).
 
 ## Security: configured, not disabled
 
@@ -846,12 +884,19 @@ hu.bankmonitor.payments
 ├── idempotency/   run-once-per-key replay protection      · one public port
 ├── fx/            exchange rates from an unreliable provider · one public port
 ├── outbox/        events written in the same transaction as the change · one public port
+├── stream/        the browser's event stream · two value types, and no port
 ├── mockfx/        the stand-in Exchange Rate provider — depends on nothing
 └── common/        Money, Currency, problem types — depended on by everything
 ```
 
-Dependencies run one way: `transfers` onto `accounts`, `fx`, `idempotency` and `outbox`,
-and nothing points back. Three public ports in total.
+Dependencies run one way: `transfers` onto `accounts`, `fx`, `idempotency`, `outbox` and
+`stream`, and nothing points back. Three public ports in total — `stream` exports the two
+value types a hint is made of and no port, because there is one implementation and no seam.
+
+`transfers` depends on `stream` without naming anything that sends: it publishes a Spring
+application event, and the container is the only thing joining the two halves. That is what
+the locked-path rule leaves as the option, and it buys the after-commit ordering in the same
+move.
 
 **Most of that boundary is enforced by the compiler, not by review.** Java's default
 access level is package-private, so a repository declared with no modifier is literally

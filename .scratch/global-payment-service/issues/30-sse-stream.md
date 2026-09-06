@@ -19,13 +19,30 @@ assumption.
 
 **Blocked by:** 20
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] One stream endpoint serves all subscribers
-- [ ] A message contains only an event type and a Transfer ID
-- [ ] Settlement, rejection and expiry each emit a message
-- [ ] Multiple concurrent subscribers each receive every message
-- [ ] A disconnecting client is cleaned up and does not leak an emitter
+- [x] One stream endpoint serves all subscribers
+- [x] A message contains only an event type and a Transfer ID
+- [x] Settlement, rejection and expiry each emit a message — *with one qualification:*
+      settlement and rejection are covered end to end, from a recorded Verdict to a
+      message read off a real socket. **Expiry is mapped and reaches a browser, but
+      nothing in this application expires a Transfer yet** — ticket 23 is the reaper and
+      is not built, so `EXPIRED` has no producer. A fake reaper would assert that the
+      fake works, so the mapping is covered directly instead — announced from inside a
+      transaction that commits, so the covered path is the one ticket 23 is told to use
+      rather than the fallback. Ticket 23 inherits one obligation and no design: call
+      `LifecycleHints.announce(transferId, EXPIRED)` inside the transaction that
+      releases the reservation.
+- [x] Multiple concurrent subscribers each receive every message
+- [x] A disconnecting client is cleaned up and does not leak an emitter
+
+**Built in [design decision 30](../../../docs/design-decisions/30-sse-stream.md)**, which
+records the two things the build found: `LockedPathTouchesOnlyTheDatabaseTest` forbids the
+obvious shape, so the two slices are joined by an application event delivered after commit
+— which buys the ordering this ticket's no-catch-up rule requires, in the same move; and
+Spring Framework 7 no longer commits the SSE response before initialising the emitter, so
+an emitter nothing is written to never reaches the browser at all. The second is not a test
+problem: it is what `onopen`, and therefore the refetch-on-open convergence, depends on.
 
 ## Comments
 

@@ -590,6 +590,17 @@ they navigate away.
 > scope leaves outside liveness, and turns the compensation named above into a declared
 > property rather than an inherited default — with the absence of a `staleTime` as the
 > half that actually carries it.
+> **[Ticket 30](30-sse-stream.md)** builds the endpoint itself, and finds that two
+> sentences of this section are load-bearing in a way that was not obvious. "The client
+> refetches when the stream opens" needs the stream to visibly *open*: under Spring
+> Framework 7 an emitter nothing is written to leaves the whole response unflushed, so
+> `onopen` would fire whenever some unrelated Transfer next finished rather than on
+> subscription — closed with one SSE comment, the specification's own no-op. And "no
+> catch-up" is what forces the send to happen after the commit rather than merely near
+> it, which the locked-path rule was independently going to insist on anyway: a hint that
+> overtook its own change would leave a page permanently wrong with nothing in a log to
+> say so. The asymmetry table above is built as stated, `transfers` naming nothing in the
+> stream's package.
 
 ---
 
@@ -1290,6 +1301,17 @@ package-private; the **`@Transactional` method** stays public.
 > is unchanged, and the `OutboxPoller package-private` clause is load-bearing
 > rather than decorative, since it is what makes "the only way to publish an event
 > is to have written it down first" true by compilation.
+> **[Ticket 30](30-sse-stream.md)** adds a `stream/` slice on the same precedent
+> again — two public value types, no port, one implementation and no seam, so the
+> count of three ports still stands, and the tree above is left as it was written.
+> It is also the first slice `transfers` depends on without naming: the two halves
+> are joined by a Spring application event and by nothing else, because
+> `LockedPathTouchesOnlyTheDatabaseTest` forbids anything reachable from a lock
+> holder touching `org.springframework.web..`, and an `SseEmitter` lives there. The
+> dependency arrow still runs one way and the slices stay free of cycles; what is
+> new is that the compiler checks neither end of this particular join, which is why
+> an end-to-end test exists in `transfers` rather than beside the rest of the
+> stream's own.
 
 ---
 

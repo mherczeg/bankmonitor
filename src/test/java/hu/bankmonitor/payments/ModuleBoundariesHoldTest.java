@@ -45,7 +45,7 @@ class ModuleBoundariesHoldTest {
 	 */
 	private static final List<String> DOCUMENTED_PACKAGES = List.of(
 			"accounts", "transfers", "transfers.checks", "idempotency", "fx", "outbox",
-			"mockfx", "common");
+			"stream", "mockfx", "common");
 
 	/**
 	 * Matches on role as well as on name. The suffix alone would be the whole rule in a

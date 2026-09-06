@@ -113,4 +113,16 @@ class CheckLedgerEntry {
 	boolean isAnswered() {
 		return verdict != null;
 	}
+
+	/**
+	 * The two facts about this row that leave the package, as the row reports them itself.
+	 *
+	 * <p>A method here rather than a getter per field, because a getter is reusable and this is
+	 * not: the three predicates above exist so that no caller ever holds a
+	 * {@link Verdict} taken off a row, and a pair of accessors added for the reporting path
+	 * would hand the settlement path the same shortcut past them.
+	 */
+	CheckState state() {
+		return new CheckState(requiredCheck, verdict);
+	}
 }

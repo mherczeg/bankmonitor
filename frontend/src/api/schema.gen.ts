@@ -94,6 +94,12 @@ export interface components {
             /** Format: int64 */
             amountMinorUnits: number;
         };
+        CheckResponse: {
+            /** @enum {string} */
+            check: "FRAUD" | "MANUAL_APPROVAL";
+            /** @enum {string} */
+            verdict?: "APPROVED" | "REJECTED";
+        };
         TransferResponse: {
             /** Format: int64 */
             id: number;
@@ -113,6 +119,7 @@ export interface components {
             creditedAmountCurrency: "EUR" | "USD" | "HUF";
             /** Format: date-time */
             createdAt: string;
+            checks?: components["schemas"]["CheckResponse"][];
         };
         CreateAccountRequest: {
             /** @enum {string} */

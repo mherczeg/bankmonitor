@@ -3,6 +3,9 @@ package hu.bankmonitor.testsupport;
 import hu.bankmonitor.payments.common.Currency;
 import hu.bankmonitor.payments.common.Money;
 import hu.bankmonitor.payments.transfers.TransferStatus;
+import hu.bankmonitor.payments.transfers.checks.Check;
+import hu.bankmonitor.payments.transfers.checks.Verdict;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
@@ -43,8 +46,12 @@ public final class TransferRows {
 		openAccount(jdbc, DESTINATION_ACCOUNT, Currency.EUR);
 	}
 
-	/** Transfers first, then Accounts: each Transfer row points at the two below it. */
+	/**
+	 * Check Ledger first, then Transfers, then Accounts: each table points at the one below
+	 * it, and a foreign key refuses any other order.
+	 */
 	public static void empty(JdbcTemplate jdbc) {
+		jdbc.update("DELETE FROM check_ledger");
 		jdbc.update("DELETE FROM transfers");
 		jdbc.update("DELETE FROM accounts");
 	}
@@ -75,5 +82,24 @@ public final class TransferRows {
 				debitedAmount.minorUnits(), debitedAmount.currency().name(),
 				creditedAmount.minorUnits(), creditedAmount.currency().name(),
 				status.name(), createdAt.atOffset(ZoneOffset.UTC));
+	}
+
+	/**
+	 * One Check a Transfer requires, in either of the states a ledger row can hold.
+	 *
+	 * <p>The Verdict is a nullable parameter rather than there being a second method for an
+	 * outstanding row, because a null Verdict is how the table itself says nobody has
+	 * answered. A test whose claim is that the two are told apart writes them the same way,
+	 * so the difference it asserts stays in the argument instead of moving into which method
+	 * the fixture happened to call.
+	 *
+	 * @param verdict what this Check answered, or {@code null} while it is outstanding
+	 */
+	public static void insertCheck(JdbcTemplate jdbc, long transferId, Check check,
+			@Nullable Verdict verdict) {
+		jdbc.update("""
+				INSERT INTO check_ledger (transfer_id, required_check, verdict)
+				VALUES (?, ?, ?)
+				""", transferId, check.name(), verdict == null ? null : verdict.name());
 	}
 }

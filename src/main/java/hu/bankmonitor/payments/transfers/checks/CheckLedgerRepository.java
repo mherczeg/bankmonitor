@@ -20,8 +20,24 @@ interface CheckLedgerRepository extends Repository<CheckLedgerEntry, Long> {
 	/** Opens one Check on one Transfer, which is how a ledger row comes to exist. */
 	CheckLedgerEntry save(CheckLedgerEntry entry);
 
-	/** One Transfer's whole Check Ledger, which is what {@link LedgerDecision#decide} reads. */
-	List<CheckLedgerEntry> findAllByTransferId(Long transferId);
+	/**
+	 * One Transfer's whole Check Ledger: what {@link LedgerDecision#decide} is handed, and what
+	 * {@link CheckLedger#stateOf} reports.
+	 *
+	 * <p><b>Ordered by the Check, for the reader rather than for the decision.</b> {@code
+	 * decide} is specified over the rows in any order and says so; the reporting path is not,
+	 * because a Check Ledger that reshuffles itself between two refetches of unchanged data is
+	 * a screen an operator cannot read. Two queries differing only in an {@code ORDER BY} would
+	 * be the alternative, and an ordering the settlement path does not need is cheaper than a
+	 * second method the next reader has to choose between.
+	 *
+	 * <p>The Check is a total order on its own here: {@code check_ledger_one_row_per_check}
+	 * makes one Check at most one row of a Transfer's ledger, so there is no tie to break. The
+	 * column stores the constant's name, so the order is alphabetical and not the policy's —
+	 * what is promised to a reader is stability, not a running order, and a Check added to
+	 * {@code Check} sorts wherever its name falls.
+	 */
+	List<CheckLedgerEntry> findAllByTransferIdOrderByRequiredCheck(Long transferId);
 
 	/**
 	 * Writes a Verdict into the one row that is still outstanding for that Check, and

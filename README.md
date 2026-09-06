@@ -68,7 +68,7 @@ and no rate source, which is the right shape for pointing the application at a r
 | `POST /api/accounts` | Opens an Account in a given Currency with a starting balance |
 | `POST /api/transfers` | Requests a Transfer between two Accounts, reserving the funds on the source |
 | [`GET /api/transfers`](http://localhost:8080/api/transfers) | Every Transfer in every status, newest first; `?status=` narrows it to one |
-| `GET /api/transfers/{id}` | One Transfer by the identifier the `201` above returns in its `Location` |
+| `GET /api/transfers/{id}` | One Transfer by the identifier the `201` above returns in its `Location`, with the Check Ledger it is waiting on |
 | `POST /internal/transfers/{id}/checks/{check}` | A Check service reports its Verdict — the one endpoint that takes a credential |
 | [`/actuator/health`](http://localhost:8080/actuator/health) | Health check, including H2 connectivity |
 | [`/v3/api-docs`](http://localhost:8080/v3/api-docs) | The OpenAPI document the frontend's types are generated from |
@@ -203,7 +203,7 @@ build.
 
 ## What is built so far
 
-Tickets 01–17, 19–21, 24–25, 27 and 31–36 of 44: the skeleton, schema management, the package
+Tickets 01–17, 19–22, 24–25, 27 and 31–36 of 44: the skeleton, schema management, the package
 structure the domain code will be written into, the security chain in front of it, the error
 contract every endpoint will answer with, the value type every amount in the system is
 expressed in and the single conversion between currencies, the first entity and the first
@@ -212,7 +212,8 @@ and the locking rule the concurrency design rests on, the reservation that rule 
 the endpoint a client posts a Transfer to and the two it is read back from, the claim on an
 Idempotency Key and the duplicate resolution that turns that claim into an answer, the Check
 Ledger a Transfer has to clear before it settles, the one operation that answers a Check and
-moves the money, the guarded endpoint that operation is reached through, the third-party
+moves the money, the guarded endpoint that operation is reached through, the response that
+tells an operator what a Transfer is still waiting on, the third-party
 Exchange Rate provider the resilience work is aimed at and the client that survives it, the
 table that keeps a committed change and the news of it from ever disagreeing, the frontend's
 shell, the generated API types that join the two halves, the frontend edge that turns Minor
@@ -330,6 +331,20 @@ until a person noticed — cannot exist. The operation that writes them refuses 
 outside a transaction and refuses to open a ledger with no Checks in it, and an ArchUnit
 rule holds that a Transfer comes into being in exactly one place, so that is a property of
 the design rather than of the one path that exists today.
+
+**That answer is on the wire, and only where it is asked for.** `GET /api/transfers/{id}`
+sends a `checks` array — one entry per Check the Transfer requires, each naming the Check
+and carrying its `verdict` if one has been given. **An outstanding Check has no `verdict`
+member at all**, rather than a null one: a client is made to handle an unanswered Check
+instead of remembering that a value it was given may be nothing. The entries come back
+ordered by the Check, so the ledger does not reshuffle itself between two refetches of
+unchanged data, and the ledger is read in the same transaction as the Transfer, so the
+status and the rows explaining it can never be a snapshot apart. The listing endpoint
+sends no `checks` at all: what a Transfer is waiting on is what a single Transfer is
+fetched to find out, and a list carrying every Transfer's ledger would read a second table
+per row to fill a screen that renders none of it. What the response cannot say is *when* a
+Check answered — the ledger keeps no timestamp, and why it does not yet is in
+[`docs/deferred.md`](docs/deferred.md).
 
 What follows from the ledger is a **pure function of it**: no repository, no clock, no
 Transfer. Settle when nothing is outstanding and nothing rejected, reject on the first

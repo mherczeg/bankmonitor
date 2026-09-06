@@ -61,7 +61,7 @@ class CheckLedgerTest {
 			}
 
 			@Override
-			public List<CheckLedgerEntry> findAllByTransferId(Long transferId) {
+			public List<CheckLedgerEntry> findAllByTransferIdOrderByRequiredCheck(Long transferId) {
 				throw new AssertionError("opening a ledger reads none");
 			}
 

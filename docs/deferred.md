@@ -610,6 +610,38 @@ know how many there ought to be.
 
 ---
 
+## When a Check was answered is not recorded
+
+**Deferred.** `check_ledger` has no timestamp column, so the ledger records *that*
+a Check answered and never *when*. The single-Transfer response
+([ticket 22](design-decisions/22-check-ledger-on-transfer-detail.md)) reports each
+Check and its Verdict, and an operator reading it can see which Checks are
+outstanding but not how long they have been.
+
+**Why deferred:** ticket 22 is the first thing that reads the ledger for a person
+and was therefore the first that could have added the column. It ships without it
+on the same principle as `Transfer`'s single timestamp and
+`idempotency_records`'s missing `claimed_at`: a timestamp with no reader is a
+column whose meaning is settled by whoever first has a use for it, and the two
+plausible readers disagree about what it should mean. A screen wants *when this
+Check answered*; an audit trail wants *when this row changed*, including the row's
+own creation. Written for the wrong one, it is a migration to fix rather than a
+column to add.
+
+**What it would take:** `answered_at` on `check_ledger`, written by the same
+guarded `UPDATE` that writes the Verdict (so it cannot be set on a row that was
+not answered), carried on `CheckState` and `CheckResponse` as an optional member
+beside the Verdict — absent exactly when the Verdict is. Nothing in the decision
+function reads it; `LedgerDecision` counts rows and asks nothing about their
+history.
+
+**What is not deferred with it:** the *deadline*. How long a Transfer has before
+its unanswered Checks expire is §14's question and belongs to the Transfer rather
+than to a row, and [ticket 23](../.scratch/global-payment-service/issues/23-expiry-reaper.md)
+puts it there.
+
+---
+
 ## A redelivered Verdict is refused rather than absorbed
 
 **Deferred.** A Check service delivers at least once, so the very Verdict that

@@ -247,12 +247,16 @@ class TransferRequestContractTest {
 		 * {@code Location} still points at the Transfer that already exists — and the
 		 * reservation is never reached, which is the half that says no second Transfer was
 		 * created rather than merely that none was reported.
+		 *
+		 * <p>No Check Ledger on the replayed response, and none on the first request's either:
+		 * {@code checks} is what {@code GET /api/transfers/{id}} adds, and the {@code Location}
+		 * header above is the client's way to it.
 		 */
 		@Test
 		@DisplayName("replays the first request's 201 without reserving anything again")
 		void replaysTheFirstRequestsResponse() {
 			willReturn(new TransferResponse(31L, 5L, 9L, TransferStatus.PENDING,
-					100_50L, Currency.EUR, 100_50L, Currency.EUR, REQUESTED_AT))
+					100_50L, Currency.EUR, 100_50L, Currency.EUR, REQUESTED_AT, null))
 					.given(requests).executeOnce(any(), any(), eq(TransferResponse.class), any());
 
 			MvcTestResult result = request(VALID_PAYLOAD);

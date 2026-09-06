@@ -304,6 +304,10 @@ leave the Transfer `PENDING` for ever without either ever reaching an `UPDATE`.
 > measuring that under the row lock the conditional update cannot fire, and gives
 > a Verdict arriving on a terminal Transfer its own refusal because the guard
 > cannot serve it.
+> **[Ticket 22](22-check-ledger-on-transfer-detail.md)** makes "the ledger *is*
+> the pending-state UI" true rather than intended, by putting it on the
+> single-Transfer response and on that one alone — and records what the shape
+> chosen for it costs the generated types.
 
 ---
 

@@ -9,9 +9,9 @@ seam at once, rather than an internal bookkeeping table.
 
 **Blocked by:** 15, 19
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Fetching one Transfer returns its Checks with each one's Verdict or its absence
-- [ ] A `PENDING` Transfer's outstanding Checks are distinguishable from answered ones
-- [ ] The list endpoint is unchanged — this detail belongs to the single-Transfer response
-- [ ] The response shape appears in the OpenAPI document
+- [x] Fetching one Transfer returns its Checks with each one's Verdict or its absence
+- [x] A `PENDING` Transfer's outstanding Checks are distinguishable from answered ones
+- [x] The list endpoint is unchanged — this detail belongs to the single-Transfer response
+- [x] The response shape appears in the OpenAPI document

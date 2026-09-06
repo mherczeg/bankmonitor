@@ -126,7 +126,7 @@ class TransferController {
 	 */
 	@GetMapping
 	List<TransferResponse> listTransfers(@RequestParam(required = false) @Nullable TransferStatus status) {
-		return transfers.list(status).stream().map(TransferResponse::of).toList();
+		return transfers.list(status);
 	}
 
 	/**
@@ -134,13 +134,13 @@ class TransferController {
 	 * a pending Transfer's state live in the URL rather than in the tab that submitted it, so
 	 * a refresh shows where the Transfer has got to instead of losing it.
 	 *
-	 * <p>The same {@link TransferResponse} the listing sends, member for member. Ticket 22
-	 * adds the Check Ledger to this response and to this one only — what a Transfer is waiting
-	 * on is what a single Transfer is fetched to find out, and it is not a column.
+	 * <p>The same {@link TransferResponse} the listing sends, and one member more: the Check
+	 * Ledger reaches this response and no other, for the reason {@link TransferResponse} gives
+	 * under {@code checks}.
 	 */
 	@GetMapping("/{id}")
 	TransferResponse fetchTransfer(@PathVariable long id) {
-		return TransferResponse.of(transfers.byId(id));
+		return transfers.byId(id);
 	}
 
 	/**

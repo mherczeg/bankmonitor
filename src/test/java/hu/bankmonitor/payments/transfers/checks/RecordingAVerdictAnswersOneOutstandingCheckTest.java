@@ -149,7 +149,7 @@ class RecordingAVerdictAnswersOneOutstandingCheckTest {
 		}
 
 		@Override
-		public List<CheckLedgerEntry> findAllByTransferId(Long transferId) {
+		public List<CheckLedgerEntry> findAllByTransferIdOrderByRequiredCheck(Long transferId) {
 			return ledger.entrySet().stream()
 					.map(row -> new CheckLedgerEntry(transferId, row.getKey(), row.getValue()))
 					.toList();

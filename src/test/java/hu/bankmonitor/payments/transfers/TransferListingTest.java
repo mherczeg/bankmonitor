@@ -3,6 +3,8 @@ package hu.bankmonitor.payments.transfers;
 import hu.bankmonitor.payments.common.Currency;
 import hu.bankmonitor.payments.common.Money;
 import hu.bankmonitor.payments.common.ProblemType;
+import hu.bankmonitor.payments.transfers.checks.Check;
+import hu.bankmonitor.payments.transfers.checks.Verdict;
 import hu.bankmonitor.testsupport.BootedApplicationTest;
 import hu.bankmonitor.testsupport.TransferRows;
 import org.junit.jupiter.api.AfterEach;
@@ -44,6 +46,9 @@ class TransferListingTest extends BootedApplicationTest {
 	private static final String LISTING = "/api/transfers";
 
 	private static final String OPENAPI_DOCUMENT = "/v3/api-docs";
+
+	/** The one member of {@link TransferResponse} the listing leaves out, and so does its schema. */
+	private static final String SENT_BY_THE_SINGLE_TRANSFER_RESPONSE_ALONE = "checks";
 
 	private static final Instant EARLIEST = Instant.parse("2026-09-06T09:00:00Z");
 
@@ -228,18 +233,51 @@ class TransferListingTest extends BootedApplicationTest {
 	}
 
 	/**
+	 * <b>The Check Ledger belongs to the single-Transfer response and to nothing else</b>, for
+	 * the reason {@link TransferResponse} gives under {@code checks}. The row is written with a
+	 * Verdict on it so that the claim is about this endpoint leaving the ledger out, and not
+	 * about there being no ledger to leave out.
+	 *
+	 * <p>Asserted as an absent member rather than an empty one, because that is what the
+	 * document promises: {@code checks} is the one member of {@link TransferResponse} not
+	 * listed as required, and an empty array here would be this endpoint claiming the Transfer
+	 * requires no Checks — which no Transfer does.
+	 */
+	@Test
+	@DisplayName("the listing carries no Check Ledger, which belongs to the single-Transfer response")
+	void leavesTheCheckLedgerOutOfTheListing() {
+		insertTransfer(11L, TransferStatus.PENDING, LATER);
+		TransferRows.insertCheck(jdbc, 11L, Check.FRAUD, Verdict.APPROVED);
+
+		client().get().uri(LISTING)
+				.exchange()
+				.expectStatus().isOk()
+				.expectBody()
+				.jsonPath("$[0].status").isEqualTo("PENDING")
+				.jsonPath("$[0].checks").doesNotExist();
+	}
+
+	/**
 	 * The shape ticket 32 generates the frontend's types from, and ticket 43's Transactions
 	 * screen reads. springdoc derives {@code required} from constraint annotations and a
 	 * response is never validated, so left alone this record would publish a schema whose
 	 * every member is optional — and a mock omitting the status would still compile.
 	 * {@link TransferResponse} says so itself, and the list is compared against the record's
 	 * own components so the two cannot drift apart.
+	 *
+	 * <p><b>{@code checks} is the one component held out of that comparison</b>, and it is the
+	 * cost ticket 22 chose knowingly: one Transfer type across both read endpoints, at the
+	 * price of a member the generated type says may be missing on the screen that exists to
+	 * render it. Naming it here rather than trimming the expectation is what keeps the
+	 * exception a decision — a second optional member added without a second thought fails this
+	 * test.
 	 */
 	@Test
 	@DisplayName("the OpenAPI document describes both read endpoints and the response shape")
 	void describesBothReadEndpointsInTheOpenApiDocument() {
-		List<String> everyComponent = Arrays.stream(TransferResponse.class.getRecordComponents())
+		List<String> everyRequiredComponent = Arrays.stream(TransferResponse.class.getRecordComponents())
 				.map(RecordComponent::getName)
+				.filter(component -> !component.equals(SENT_BY_THE_SINGLE_TRANSFER_RESPONSE_ALONE))
 				.toList();
 
 		client().get().uri(OPENAPI_DOCUMENT)
@@ -253,7 +291,44 @@ class TransferListingTest extends BootedApplicationTest {
 						.containsExactlyInAnyOrder("PENDING", "SETTLED", "REJECTED", "EXPIRED"))
 				.jsonPath("$.components.schemas.TransferResponse.required")
 				.value((List<String> required) ->
-						assertThat(required).containsExactlyInAnyOrderElementsOf(everyComponent));
+						assertThat(required).containsExactlyInAnyOrderElementsOf(everyRequiredComponent));
+	}
+
+	/**
+	 * One ledger row as the document describes it: the Check is always there and the Verdict is
+	 * not, which is how a generated client is made to handle an unanswered Check rather than
+	 * read past it.
+	 *
+	 * <p>Both enumerations are compared against the Java constants, on the reasoning ticket 32
+	 * records for {@code ProblemType}: a list written out here would be the second copy of a
+	 * vocabulary, and the one that goes stale silently when a Check is added to the policy.
+	 *
+	 * <p>They are read off this schema's own properties because springdoc publishes no {@code
+	 * Check} or {@code Verdict} component: an enum it derives from Java is inlined at every use
+	 * rather than named, as {@code TransferStatus} is inlined into this document twice already.
+	 * {@code ProblemType} is a component because {@code OpenApiConfiguration} builds that one by
+	 * hand, and nothing here needs the same. So a generated client gets these constants from
+	 * where they are inlined, and that is where the document has to be held to them.
+	 */
+	@Test
+	@DisplayName("the document describes a ledger row with its Check required and its Verdict not")
+	void describesOneLedgerRowInTheOpenApiDocument() {
+		client().get().uri(OPENAPI_DOCUMENT)
+				.exchange()
+				.expectStatus().isOk()
+				.expectBody()
+				.jsonPath("$.components.schemas.CheckResponse.required")
+				.value((List<String> required) -> assertThat(required).containsExactly("check"))
+				.jsonPath("$.components.schemas.CheckResponse.properties.check.enum")
+				.value((List<String> checks) -> assertThat(checks)
+						.containsExactlyInAnyOrderElementsOf(namesOf(Check.values())))
+				.jsonPath("$.components.schemas.CheckResponse.properties.verdict.enum")
+				.value((List<String> verdicts) -> assertThat(verdicts)
+						.containsExactlyInAnyOrderElementsOf(namesOf(Verdict.values())));
+	}
+
+	private static List<String> namesOf(Enum<?>[] constants) {
+		return Arrays.stream(constants).map(Enum::name).toList();
 	}
 
 	/** The amount is the same on both sides for every Transfer whose status or order is the claim. */

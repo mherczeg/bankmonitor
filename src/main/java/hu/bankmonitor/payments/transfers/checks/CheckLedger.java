@@ -11,14 +11,19 @@ import java.util.Set;
 
 /**
  * The per-Transfer record of which Checks it requires and how each has been answered, and
- * the two operations this package exports: opening that record, and answering one Check in
- * it.
+ * the three operations this package exports: opening that record, answering one Check in it,
+ * and reporting what it holds.
  *
- * <p>The two are the ledger's whole life and they are deliberately the only ways into it.
- * Every row a Transfer will ever have is written by {@link #openFor}, and the only thing
+ * <p>The first two are the ledger's whole life and they are deliberately the only ways into
+ * it. Every row a Transfer will ever have is written by {@link #openFor}, and the only thing
  * that happens to one afterwards is {@link #record} filling in its Verdict — there is no way
  * to add a row, remove one, or answer the same Check twice, which is what lets
  * {@link LedgerDecision#decide} read the rows as the whole truth about the Transfer.
+ *
+ * <p>{@link #stateOf} is the third and writes nothing. It exists because the ledger was
+ * always the answer to "why is this Transfer still pending" and, until ticket 22, was the
+ * answer nobody outside this package could ask for. What it hands back is {@link CheckState}
+ * rather than the rows, so reading the ledger stays a strictly weaker thing than holding it.
  *
  * <p>The whole of what the Check Ledger is for rests on it being written <em>with</em> the
  * Transfer. A Transfer whose rows were written afterwards has a window in which it is
@@ -91,10 +96,10 @@ public class CheckLedger {
 	 * <p><b>The rows are read after the update, and nothing may have read them before it.</b>
 	 * A bulk update goes straight to the database and leaves the persistence context alone,
 	 * so an entry loaded earlier in the same transaction would come back from
-	 * {@link CheckLedgerRepository#findAllByTransferId} still carrying its old, unanswered
-	 * Verdict — and a ledger whose last outstanding row looks outstanding decides {@code
-	 * WAIT}, leaving a fully approved Transfer pending for ever. This is the only method that
-	 * reads the rows, and it reads them here.
+	 * {@link CheckLedgerRepository#findAllByTransferIdOrderByRequiredCheck} still carrying its
+	 * old, unanswered Verdict — and a ledger whose last outstanding row looks outstanding
+	 * decides {@code WAIT}, leaving a fully approved Transfer pending for ever. Nothing on this
+	 * path reads the rows before this line does.
 	 *
 	 * <p>{@link Propagation#MANDATORY} for {@link #openFor}'s reason turned around: the
 	 * decision returned here is acted on by moving money, and an answer committed separately
@@ -115,11 +120,47 @@ public class CheckLedger {
 	@Transactional(propagation = Propagation.MANDATORY)
 	public LedgerDecision record(long transferId, Check check, Verdict verdict) {
 		int answered = entries.answer(transferId, check, verdict);
-		List<CheckLedgerEntry> ledger = entries.findAllByTransferId(transferId);
+		List<CheckLedgerEntry> ledger = entries.findAllByTransferIdOrderByRequiredCheck(transferId);
 
 		if (answered == 0 && ledger.stream().noneMatch(entry -> entry.isFor(check))) {
 			throw new CheckNotRequiredException(transferId, check);
 		}
 		return LedgerDecision.decide(ledger);
+	}
+
+	/**
+	 * One Transfer's ledger as something to report: every Check it requires, each with its
+	 * Verdict or without one, in the order {@link CheckLedgerRepository} fixes.
+	 *
+	 * <p>The third and last thing this package exports, and the only one that decides nothing.
+	 * It answers "what is this Transfer waiting on", which is the question the single-Transfer
+	 * response exists to answer and the one the ledger has always been able to answer without
+	 * anyone being able to ask it.
+	 *
+	 * <p>{@link Propagation#MANDATORY} on a read, for a reason the writes do not have: the
+	 * caller is reading a Transfer as well, and the two have to be one snapshot. A Verdict
+	 * committing between the Transfer read and this one would produce a report of a settled
+	 * Transfer still waiting on a Check — an answer that is wrong in the one place somebody
+	 * goes to find out which it is.
+	 *
+	 * <p><b>A Transfer with no rows is reported as having none, rather than refused.</b>
+	 * {@link LedgerDecision#decide} refuses that ledger because it is about to move money on
+	 * what the rows say, and no rows would mean moving it unchecked. Nothing is decided here,
+	 * and refusing would make the one screen that could show an operator a Transfer nothing
+	 * will ever settle the one screen that will not open.
+	 *
+	 * @return one entry per Check the Transfer requires, empty only for a Transfer that never
+	 *         had a ledger or never existed — this read cannot tell those apart, and the caller
+	 *         is the half that can, because it has already loaded the Transfer
+	 * @throws org.springframework.transaction.IllegalTransactionStateException if the caller
+	 *                                                                         has no
+	 *                                                                         transaction
+	 *                                                                         open
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public List<CheckState> stateOf(long transferId) {
+		return entries.findAllByTransferIdOrderByRequiredCheck(transferId).stream()
+				.map(CheckLedgerEntry::state)
+				.toList();
 	}
 }

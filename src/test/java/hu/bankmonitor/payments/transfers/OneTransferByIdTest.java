@@ -3,15 +3,20 @@ package hu.bankmonitor.payments.transfers;
 import hu.bankmonitor.payments.common.Currency;
 import hu.bankmonitor.payments.common.Money;
 import hu.bankmonitor.payments.common.ProblemType;
+import hu.bankmonitor.payments.transfers.checks.Check;
+import hu.bankmonitor.payments.transfers.checks.CheckLedger;
+import hu.bankmonitor.payments.transfers.checks.Verdict;
 import hu.bankmonitor.testsupport.BootedApplicationTest;
 import hu.bankmonitor.testsupport.TransferRows;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.IllegalTransactionStateException;
 
 import java.time.Instant;
 import java.util.List;
@@ -19,14 +24,23 @@ import java.util.List;
 import static hu.bankmonitor.testsupport.TransferRows.DESTINATION_ACCOUNT;
 import static hu.bankmonitor.testsupport.TransferRows.SOURCE_ACCOUNT;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * {@code GET /api/transfers/{id}}: the resource a Transfer gets of its own, which is what
- * lets a pending Transfer's state live in a URL and survive a refresh (ticket 41).
+ * lets a pending Transfer's state live in a URL and survive a refresh (ticket 41), and the
+ * one place its Check Ledger reaches the wire.
  *
- * <p>Rows go in as SQL for {@link TransferListingTest}'s reason: a Transfer the application
- * can produce is {@code PENDING} and nothing else yet, and the status is half of what this
- * endpoint exists to report.
+ * <p>The ledger is what turns "why is this stuck" from a support question into a field on a
+ * screen, so most of what follows is about a claim the amounts cannot make: that an
+ * outstanding Check is told apart from an answered one by a reader who was not told which
+ * Checks to expect.
+ *
+ * <p>Rows go in as SQL for {@link TransferListingTest}'s reason, and the ledger rows go in
+ * the same way for a sharper one. {@code REJECTED} beside the Check that rejected it, and
+ * {@code SETTLED} beside two approvals, are the pairings this endpoint reports; driving them
+ * through {@code VerdictRecording} would make every fixture here a second test of ticket 20
+ * before this one's claim could be stated.
  */
 class OneTransferByIdTest extends BootedApplicationTest {
 
@@ -39,26 +53,29 @@ class OneTransferByIdTest extends BootedApplicationTest {
 	@Autowired
 	private JdbcTemplate jdbc;
 
+	@Autowired
+	private CheckLedger ledger;
+
 	@BeforeEach
 	void startFromTwoAccountsAndNoTransfers() {
 		TransferRows.startFromTwoAccountsAndNoTransfers(jdbc);
 	}
 
 	@AfterEach
-	void emptyTheTransferAndAccountTables() {
+	void emptyTheLedgerTransferAndAccountTables() {
 		TransferRows.empty(jdbc);
 	}
 
 	/**
-	 * The same representation the listing sends, member for member. One shape for both
-	 * endpoints is what lets ticket 32 generate a single Transfer type, and what makes the
-	 * page a client lands on after submitting the same page it refreshes an hour later.
+	 * Every member the listing sends, sent here too. One shape across both endpoints is what
+	 * lets ticket 32 generate a single Transfer type, and what makes the page a client lands on
+	 * after submitting the same page it refreshes an hour later. What this endpoint adds to it
+	 * is the {@code checks} member below, which the listing leaves out.
 	 */
 	@Test
 	@DisplayName("a Transfer is fetched by its identifier, in the shape the listing sends")
 	void fetchesOneTransferByItsIdentifier() {
-		insertTransfer(TRANSFER, TransferStatus.SETTLED,
-				new Money(120_00L, Currency.EUR), new Money(46_800L, Currency.HUF));
+		insertSettledTransferApprovedByBothChecks();
 
 		client().get().uri(TRANSFERS + "/" + TRANSFER)
 				.exchange()
@@ -74,6 +91,149 @@ class OneTransferByIdTest extends BootedApplicationTest {
 				.jsonPath("$.creditedAmountMinorUnits").isEqualTo(46_800L)
 				.jsonPath("$.creditedAmountCurrency").isEqualTo("HUF")
 				.jsonPath("$.createdAt").isEqualTo(REQUESTED_AT.toString());
+	}
+
+	/**
+	 * Every Check the Transfer required, each carrying the answer it gave. A settled Transfer
+	 * is the case where the ledger explains a status the Transfer has already reached, which is
+	 * what makes this response an audit trail as well as a pending-state screen.
+	 */
+	@Test
+	@DisplayName("the response carries every Check the Transfer requires, with its Verdict")
+	void reportsEveryCheckTheTransferRequiresWithItsVerdict() {
+		insertSettledTransferApprovedByBothChecks();
+
+		client().get().uri(TRANSFERS + "/" + TRANSFER)
+				.exchange()
+				.expectStatus().isOk()
+				.expectBody()
+				.jsonPath("$.checks[*].check")
+				.value((List<String> checks) -> assertThat(checks).containsExactly("FRAUD", "MANUAL_APPROVAL"))
+				.jsonPath("$.checks[*].verdict")
+				.value((List<String> verdicts) -> assertThat(verdicts).containsExactly("APPROVED", "APPROVED"));
+	}
+
+	/**
+	 * <b>The claim the ticket exists for.</b> A {@code PENDING} Transfer is stuck on something,
+	 * and this is where a reader finds out on which Check: the answered one reports its
+	 * approval, and the outstanding one carries no answer at all.
+	 *
+	 * <p>The member is asserted absent rather than null, because the two are different promises
+	 * to a generated client, and absence is the one this API can keep. {@code CheckLedgerEntry}
+	 * makes the same claim about the column it reads from — an unanswered Check has no Verdict,
+	 * rather than a third Verdict standing for nobody having given one.
+	 */
+	@Test
+	@DisplayName("an outstanding Check carries no Verdict, where an answered one carries its own")
+	void tellsAnOutstandingCheckApartFromAnAnsweredOne() {
+		insertTransfer(TransferStatus.PENDING);
+		insertCheck(Check.FRAUD, Verdict.APPROVED);
+		insertCheck(Check.MANUAL_APPROVAL, null);
+
+		client().get().uri(TRANSFERS + "/" + TRANSFER)
+				.exchange()
+				.expectStatus().isOk()
+				.expectBody()
+				.jsonPath("$.status").isEqualTo("PENDING")
+				.jsonPath("$.checks[0].check").isEqualTo("FRAUD")
+				.jsonPath("$.checks[0].verdict").isEqualTo("APPROVED")
+				.jsonPath("$.checks[1].check").isEqualTo("MANUAL_APPROVAL")
+				.jsonPath("$.checks[1].verdict").doesNotExist();
+	}
+
+	/**
+	 * Which Check said no, which is what ticket 41's rejected Transfer renders. The remaining
+	 * Check is still outstanding and stays that way: a rejection ends a Transfer without
+	 * waiting for the rest of the ledger to answer, so the ledger of a rejected Transfer is
+	 * normally incomplete and the screen has to be able to say so.
+	 */
+	@Test
+	@DisplayName("a rejected Transfer reports which Check rejected it")
+	void namesTheCheckThatRejectedTheTransfer() {
+		insertTransfer(TransferStatus.REJECTED);
+		insertCheck(Check.FRAUD, Verdict.REJECTED);
+		insertCheck(Check.MANUAL_APPROVAL, null);
+
+		client().get().uri(TRANSFERS + "/" + TRANSFER)
+				.exchange()
+				.expectStatus().isOk()
+				.expectBody()
+				.jsonPath("$.status").isEqualTo("REJECTED")
+				.jsonPath("$.checks[0].check").isEqualTo("FRAUD")
+				.jsonPath("$.checks[0].verdict").isEqualTo("REJECTED")
+				.jsonPath("$.checks[1].verdict").doesNotExist();
+	}
+
+	/**
+	 * The rows go in here in the reverse of the order they come back in, so what is asserted is
+	 * the query's order rather than the order the ledger happened to be opened in.
+	 *
+	 * <p>It is part of the contract rather than a detail of the query. A Check Ledger that
+	 * reshuffles itself between two refetches of unchanged data is a screen an operator cannot
+	 * read, whichever way ticket 41 lays it out. Ticket 15 fixed the listing's order for the
+	 * same reason and needed a tie break to make it total; here the Check itself is the key and
+	 * a Transfer cannot hold two rows for one Check, so there is no tie to break.
+	 *
+	 * <p>The order is the Check's stored name, so it is alphabetical rather than the policy's:
+	 * what is promised is that it is stable and does not depend on the order the rows were
+	 * written in, which is the whole of what a reader needs.
+	 */
+	@Test
+	@DisplayName("the Checks come back in one order, whichever order their rows were written in")
+	void reportsTheChecksInAnOrderTheRowsDoNotChoose() {
+		insertTransfer(TransferStatus.PENDING);
+		insertCheck(Check.MANUAL_APPROVAL, null);
+		insertCheck(Check.FRAUD, null);
+
+		client().get().uri(TRANSFERS + "/" + TRANSFER)
+				.exchange()
+				.expectStatus().isOk()
+				.expectBody()
+				.jsonPath("$.checks[*].check")
+				.value((List<String> checks) -> assertThat(checks).containsExactly("FRAUD", "MANUAL_APPROVAL"));
+	}
+
+	/**
+	 * A Transfer with no ledger rows is reported as requiring no Checks, rather than refused.
+	 *
+	 * <p>{@code LedgerDecision.decide} refuses exactly this ledger, because it is about to move
+	 * money on what the rows say and no rows would mean moving it unchecked. Reporting decides
+	 * nothing, and refusing here would make the one screen that could show an operator a
+	 * Transfer nothing will ever settle the one screen that will not open.
+	 *
+	 * <p>The rows are written by hand precisely because the application cannot produce this
+	 * state: a Transfer comes into being with its ledger in one transaction, and an ArchUnit
+	 * rule holds that to one place. It is reachable by a failed migration or a hand-edited
+	 * database, which is when somebody most needs the screen.
+	 */
+	@Test
+	@DisplayName("a Transfer with no ledger requires no Checks, rather than being unreadable")
+	void reportsATransferWithNoLedgerAsRequiringNoChecks() {
+		insertTransfer(TransferStatus.PENDING);
+
+		client().get().uri(TRANSFERS + "/" + TRANSFER)
+				.exchange()
+				.expectStatus().isOk()
+				.expectBody()
+				.jsonPath("$.status").isEqualTo("PENDING")
+				.jsonPath("$.checks").isArray()
+				.jsonPath("$.checks.length()").isEqualTo(0);
+	}
+
+	/**
+	 * The Transfer and its ledger are read in one transaction, asserted directly rather than
+	 * inferred from the one caller happening to be transactional.
+	 *
+	 * <p>What it buys is that the two halves of this response cannot disagree. A Verdict
+	 * committing between a Transfer read and a ledger read would produce a body reporting a
+	 * {@code SETTLED} Transfer that is still waiting on a Check — a screen saying both that the
+	 * money moved and that it has not, in the one place an operator goes to find out which.
+	 */
+	@Test
+	@DisplayName("a Transfer's ledger cannot be read outside a transaction")
+	void refusesToReadALedgerWithNoTransaction() {
+		assertThatThrownBy(() -> ledger.stateOf(TRANSFER))
+				.isInstanceOf(IllegalTransactionStateException.class);
 	}
 
 	/**
@@ -119,8 +279,29 @@ class OneTransferByIdTest extends BootedApplicationTest {
 				.jsonPath("$.errors[0].message").isEqualTo("must be a whole number");
 	}
 
+	/**
+	 * The Transfer whose two amounts are denominated differently, which is the only kind of row
+	 * on which a shape that had collapsed the two Currencies into one would be caught.
+	 */
+	private void insertSettledTransferApprovedByBothChecks() {
+		insertTransfer(TransferStatus.SETTLED,
+				new Money(120_00L, Currency.EUR), new Money(46_800L, Currency.HUF));
+		insertCheck(Check.FRAUD, Verdict.APPROVED);
+		insertCheck(Check.MANUAL_APPROVAL, Verdict.APPROVED);
+	}
+
+	/** The amount is the same on both sides for every Transfer whose ledger is the claim. */
+	private void insertTransfer(TransferStatus status) {
+		Money sameOnBothSides = new Money(100_00L, Currency.EUR);
+		insertTransfer(status, sameOnBothSides, sameOnBothSides);
+	}
+
 	/** Every Transfer this class needs was requested at the same instant. */
-	private void insertTransfer(long id, TransferStatus status, Money debitedAmount, Money creditedAmount) {
-		TransferRows.insertTransfer(jdbc, id, status, REQUESTED_AT, debitedAmount, creditedAmount);
+	private void insertTransfer(TransferStatus status, Money debitedAmount, Money creditedAmount) {
+		TransferRows.insertTransfer(jdbc, TRANSFER, status, REQUESTED_AT, debitedAmount, creditedAmount);
+	}
+
+	private void insertCheck(Check check, @Nullable Verdict verdict) {
+		TransferRows.insertCheck(jdbc, TRANSFER, check, verdict);
 	}
 }

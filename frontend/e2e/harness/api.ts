@@ -74,6 +74,17 @@ export type ScriptedApi = {
   transfers: (transfers: readonly Transfer[]) => void
 
   /**
+   * What `POST /api/transfers` answers with — the `PENDING` Transfer the service opened,
+   * as the `201` the endpoint sends.
+   *
+   * The Transfer's own page is scripted separately with {@link ScriptedApi.transfer}, on
+   * {@link ScriptedApi.opensAccount}'s reasoning: the screen the form navigates to fetches
+   * the Transfer for itself, so a spec that answered both from one call would hide the
+   * fetch it is there to make.
+   */
+  requestsTransfer: (transfer: Transfer) => void
+
+  /**
    * What `GET /api/transfers/{id}` answers with, filed under the ID the Transfer itself
    * carries. Taking the whole Transfer rather than an ID beside it is what stops a spec
    * scripting a Transfer at an address that reports a different one.
@@ -102,12 +113,24 @@ export type ScriptedApi = {
    * has not been asked for, or where the request carried no body.
    */
   bodySent: (method: HttpMethod, path: ApiPath, params?: PathParams) => unknown
+
+  /**
+   * The headers of the last request the browser sent to a path, **named in lower case** —
+   * Playwright normalises them, so an Idempotency Key is read as `['x-idempotency-key']`.
+   *
+   * It is what makes the idempotency rules observable at all: whether two attempts went out
+   * under one key, and whether a corrected payload went out under a new one, is a fact
+   * about the wire and about nothing the screen renders. `{}` where the path has not been
+   * asked for.
+   */
+  headersSent: (method: HttpMethod, path: ApiPath, params?: PathParams) => Readonly<Record<string, string>>
 }
 
 export const scriptApi = async (page: Page): Promise<ScriptedApi> => {
   const answers = new Map<string, Answer>()
   const asked = new Map<string, number>()
   const sent = new Map<string, unknown>()
+  const headers = new Map<string, Record<string, string>>()
 
   await page.route(anApiRequest, async (route) => {
     const request = route.request()
@@ -116,6 +139,7 @@ export const scriptApi = async (page: Page): Promise<ScriptedApi> => {
 
     asked.set(asking, (asked.get(asking) ?? 0) + 1)
     sent.set(asking, request.postDataJSON())
+    headers.set(asking, await request.allHeaders())
 
     await route.fulfill(answers.get(asking) ?? unscripted(request.method(), path))
   })
@@ -124,12 +148,14 @@ export const scriptApi = async (page: Page): Promise<ScriptedApi> => {
     accounts: (accounts) => answers.set(requestFor('GET', ACCOUNTS), succeeds(accounts)),
     opensAccount: (account) => answers.set(requestFor('POST', ACCOUNTS), created(account)),
     transfers: (transfers) => answers.set(requestFor('GET', TRANSFERS), succeeds(transfers)),
+    requestsTransfer: (transfer) => answers.set(requestFor('POST', TRANSFERS), created(transfer)),
     transfer: (transfer) =>
       answers.set(requestFor('GET', urlFor(TRANSFER, { id: transfer.id })), succeeds(transfer)),
     refuses: (method, path, problem, params) =>
       answers.set(requestFor(method, urlFor(path, params)), fails(problem)),
     timesAsked: (method, path, params) => asked.get(requestFor(method, urlFor(path, params))) ?? 0,
     bodySent: (method, path, params) => sent.get(requestFor(method, urlFor(path, params))),
+    headersSent: (method, path, params) => headers.get(requestFor(method, urlFor(path, params))) ?? {},
   }
 }
 

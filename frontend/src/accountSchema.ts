@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Currency, NewAccount } from './api/types'
-import { rejectedFieldsIn } from './api/validation'
+import { type FieldForMember, type ServerRefusal, serverRefusalIn as formRefusalIn } from './formRefusal'
 import { type AmountRejection, CURRENCIES, decimalPlacesIn, formatAmount, parseAmount } from './money'
 
 /**
@@ -89,66 +89,14 @@ export type NewAccountForm = z.input<typeof newAccountSchema>
  * typed — so a refusal naming the wire member has to be walked back to the input that can
  * be corrected.
  */
-const FIELD_FOR_MEMBER: Readonly<Partial<Record<string, keyof NewAccountForm>>> = {
+const FIELD_FOR_MEMBER: FieldForMember<keyof NewAccountForm> = {
   currency: 'currency',
   openingBalanceMinorUnits: 'openingBalance',
 }
 
-/** What the service refused, sorted into the fields that can be corrected and the rest. */
-export interface ServerRefusal {
-  /** One message per field of this form that the service named. */
-  readonly perField: Readonly<Partial<Record<keyof NewAccountForm, string>>>
-
-  /**
-   * What the service refused that no field here can show. A member with no field is not
-   * dropped — a message nobody sees is worse than one in the wrong place — so it is
-   * listed with the refusal instead, under the member name the service used.
-   */
-  readonly unattached: readonly string[]
-}
-
 /**
- * Reads whatever the `POST` failed with and says which of this form's fields it refused.
- *
- * Anything that is not a problem document naming members — including the `null` a
- * mutation that has not failed carries — is nothing refused.
+ * Reads whatever the `POST` failed with and says which of this form's fields it refused,
+ * which is {@link formRefusalIn} bound to the map above.
  */
-export const serverRefusalIn = (failure: unknown): ServerRefusal => {
-  const { byField, overall } = rejectedFieldsIn(failure)
-  const perField: Partial<Record<keyof NewAccountForm, string>> = {}
-  const unattached = [...overall]
-
-  for (const [member, message] of byField) {
-    const field = FIELD_FOR_MEMBER[member]
-
-    if (field === undefined) unattached.push(`${member}: ${message}`)
-    else perField[field] = message
-  }
-
-  return { perField, unattached }
-}
-
-/**
- * What is shown under one field: what this schema said about what is in the box now, and
- * what the service said about what was last sent.
- *
- * The client-side messages come first because they describe the current value, while a
- * server one describes a payload that may already have been corrected.
- *
- * The first argument is a form library's error list rather than a shape named here,
- * because a Standard Schema issue reaches the field as whatever that library kept of it.
- */
-export const messagesUnder = (
-  errors: readonly unknown[],
-  fromServer: string | undefined,
-): readonly string[] => [
-  ...errors.flatMap(messageIn),
-  ...(fromServer === undefined ? [] : [fromServer]),
-]
-
-const messageIn = (error: unknown): string[] => {
-  if (typeof error === 'string') return [error]
-  if (typeof error === 'object' && error !== null && 'message' in error) return [String(error.message)]
-
-  return []
-}
+export const serverRefusalIn = (failure: unknown): ServerRefusal<keyof NewAccountForm> =>
+  formRefusalIn(failure, FIELD_FOR_MEMBER)

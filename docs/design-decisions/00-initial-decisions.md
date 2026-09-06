@@ -200,6 +200,10 @@ first and must never retry the second.
 > **[Ticket 35](35-idempotency-key-module.md)** made the payload-mismatch row
 > unreachable from the frontend rather than merely handled, by keying the client's
 > Idempotency Key on the payload too.
+> **[Ticket 40](40-transfer-form.md)** is the caller that puts a key on the wire, and
+> the half ticket 35's module cannot enforce: the key is read off the *mutation's
+> variables*, so a retry re-sends the payload its first attempt sent rather than
+> whatever the form holds by then.
 
 ---
 
@@ -260,6 +264,9 @@ below are its mechanics.
 > **[Ticket 20](20-record-verdict.md)** is that caller for `SETTLED` and
 > `REJECTED`, and records why both live behind one operation rather than beside
 > the Verdict that triggers them.
+> **[Ticket 40](40-transfer-form.md)** is the frontend half: submitting navigates to
+> the Transfer's own page, so a `PENDING` Transfer's state lives in the URL and
+> survives a refresh rather than in the tab that asked for it.
 
 ---
 
@@ -729,6 +736,11 @@ backoff.
 > client, filing its query under `queryKeys.accounts()` so a stream event's invalidation
 > reaches it, and writing `refetchOnWindowFocus` out rather than leaving the parenthesis
 > above to a library default an upgrade could change.
+> **[Ticket 40](40-transfer-form.md)** is the first screen to need a mutation *semantic*
+> rather than its state: `mutationFn` is re-invoked with the variables `mutate` was
+> called with, which is the whole of why a retry cannot mint a second Idempotency Key.
+> It also owns the second reader of `queryKeys.accounts()`, and invalidates nothing on
+> success — there is no `staleTime`, so the screen it navigates to refetches anyway.
 
 ---
 
@@ -782,6 +794,12 @@ Sources: `tanstack.com/form/latest/docs/framework/react/guides/validation` and
 > above cost it exactly the one line predicted. It needs no factory — its Currency is a
 > field — and it found that registering the schema under `onSubmit` *as well as* `onChange`
 > prints every message twice, because the change validator already runs on submit.
+> **[Ticket 40](40-transfer-form.md)** is the form this section was written about, and
+> every clause of it held: the factory (spelled `transferSchemaFor`), the adornment as the
+> *only* place a Currency appears, the self-Transfer rule in the form-level validator, and
+> the re-invalidation of an untouched `100.50` when the source Account moves. What the
+> section does not say is which field a cross-field sentence lands under, and that is the
+> destination — the side an operator changes.
 
 ---
 
@@ -817,6 +835,9 @@ README justification.
 > that `.is-invalid` / `.invalid-feedback` do map onto the error state as promised — with
 > one wrinkle, that a feedback element inside an `.input-group` needs `has-validation` on
 > the group to show at all.
+> **[Ticket 40](40-transfer-form.md)** builds the second screen out of the same vocabulary
+> and needs no addition to it: two `<select>`s, an `.input-group` adornment and an alert,
+> with no CSS Module of its own.
 
 ---
 
@@ -901,6 +922,11 @@ render — deterministically, with no `waitForTimeout`. True E2E goes to
 > list above — the transfer schema's sibling, arriving first — and gives the harness the
 > two calls a form needs: an answer for a `POST`, and the body the browser actually sent,
 > which is the only place a decimal → Minor Unit conversion can be caught getting it wrong.
+> **[Ticket 40](40-transfer-form.md)** adds `transferSchema.ts` — the sibling this section
+> names — with `formRefusal.ts` split out of its predecessor once there were two callers,
+> and gives the harness `headersSent`, for the same shape of reason: **nothing on that
+> screen renders the Idempotency Key**, so a form minting a fresh one per attempt would
+> pass every assertion a DOM can carry.
 
 ---
 

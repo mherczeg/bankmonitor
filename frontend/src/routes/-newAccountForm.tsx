@@ -1,14 +1,10 @@
 import { useForm } from '@tanstack/react-form'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  type NewAccountForm as FormValues,
-  messagesUnder,
-  newAccountSchema,
-  serverRefusalIn,
-} from '../accountSchema'
+import { type NewAccountForm as FormValues, newAccountSchema, serverRefusalIn } from '../accountSchema'
 import { openAccount } from '../api/accounts'
 import { problemToMessage } from '../api/problem'
 import { queryKeys } from '../api/queryKeys'
+import { messagesUnder } from '../formRefusal'
 import { CURRENCIES } from '../money'
 
 /**

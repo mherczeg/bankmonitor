@@ -60,6 +60,10 @@ src/
   money.ts            the decimal form of an amount, in and out — see below
   accountSchema.ts    the rules the new-Account form is judged by, and the one place
                       a typed decimal becomes a Minor Unit count
+  transferSchema.ts   the same for a Transfer, built over the accounts list, because a
+                      Transfer's Currency comes from the Account the money leaves
+  formRefusal.ts      which of a form's fields the service refused, and what appears
+                      under one of them — the mechanism both schemas above bind
   api/                the API's types, the query client, its retry rule, how a failure
                       reads to an operator and which of its fields were refused, where
                       Idempotency Keys come from, the names cached answers are filed
@@ -84,9 +88,10 @@ no Redux, Zustand or Jotai here, because once the query cache holds server state
 URL holds route state there is nothing left for one to manage.
 
 **Forms are TanStack Form validated by a zod schema**, and the schema lives in its own
-module rather than beside the markup — `accountSchema.ts` is the first. What that buys is
-that a form's rules are testable without rendering a form, which is the same rule the rest
-of the frontend is built on. The one wrinkle worth knowing before writing the second form:
+module rather than beside the markup — `accountSchema.ts` and `transferSchema.ts`, the
+second a factory over the accounts list. What that buys is that a form's rules are testable
+without rendering a form, which is the same rule the rest of the frontend is built on. The
+one wrinkle to know before writing a third:
 **a zod transform does not reach the form.** TanStack validates through Standard Schema,
 which reports issues and discards the parsed value, so a submit handler is given what was
 typed and calls `schema.parse(value)` itself to get the converted shape. And the schema is
@@ -461,6 +466,70 @@ valid says that something is wrong and never which thing.
 On success the form invalidates `queryKeys.accounts()`, so **the new row arrives from the
 endpoint** rather than from anything the form knew about the Account it just asked for.
 
+## The Transfer screen
+
+`src/routes/transfers/new.tsx` renders `/transfers/new`: a source Account, a destination
+Account, an amount, and the `PENDING` Transfer the service opens from them. Submitting
+navigates to `/transfers/$transferId`, so **the pending state lives in the URL** — a
+refresh shows where the Transfer got to instead of losing it, which is the frontend half
+of the asynchronous lifecycle.
+
+The route owns the Accounts query and the form is a separate component that takes the
+loaded list as a prop (`src/routes/transfers/-newTransferForm.tsx`). That split is not
+only tidiness. It is what makes the Idempotency Key supply open **once per screen**: the
+form cannot mount before the list has arrived, so `useRef(startIntent())` runs once rather
+than once per render of a spinner. Fewer than two Accounts is its own state rather than a
+form drawn over nothing — every field would be a choice with nothing to choose.
+
+**The amount is denominated in the source Account's Currency, and there is no Currency
+input.** A Transfer is denominated by the Account the money leaves, so a payload naming a
+Currency could claim EUR out of a HUF Account and something downstream would have to decide
+which of the two to believe. The Currency appears once, as an adornment on the amount
+field, and it is derived rather than chosen — which is the difference from the new-Account
+form, where the same element repeats a choice.
+
+**The schema is therefore a factory over the accounts list**, `transferSchemaFor(accounts)`
+in `src/transferSchema.ts`, so the decimal rule derives from whichever Account is selected
+as the source. Because an object-level validator re-runs on any field change, moving the
+source from a 2-decimal Currency to a 0-decimal one re-judges an amount like `100.50` that
+nobody retyped, with no dependency wiring anywhere.
+
+Three rules never leave the browser:
+
+| Rule | Where it is shown | Why here |
+|---|---|---|
+| the amount fits the source Account's Currency | under the amount | the scale is a fact about a Currency, and `money.ts` has it |
+| a Transfer moves more than nothing | under the amount | `parseAmount` reads zero as the amount it is, so an Account can be opened empty; a Transfer of nothing is not a Transfer |
+| the two Accounts differ | under the **destination** | cross-field, and the destination is the side an operator changes — the money is already leaving the one they picked first |
+
+**There is deliberately no cross-currency rule here.** The service cannot convert between
+Currencies yet, and the refusal has readable wording in `src/api/problem.ts` — but a client
+rule would be one to delete rather than reword the day that changes.
+
+`src/api/transfers.ts` is the single request behind it: `POST /api/transfers` with the
+Transfer and an Idempotency Key, throwing the parsed problem document on a refusal for the
+reason `accounts.ts` does. **The key is a parameter and is never minted in there** — see
+*The Idempotency Key* above for what minting one inside the request would cost. It reaches
+that function from the mutation's own variables:
+
+```ts
+mutationFn: (transfer) => requestTransfer(transfer, keys.current.keyFor(transfer))
+```
+
+which is the whole of the retry rule. TanStack re-invokes `mutationFn` with the variables
+`mutate` was called with, so a retry re-sends the payload its first attempt sent and reads
+back the same key; there is no form state in scope for it to read instead. The **Try again**
+button — rendered only when `problemToMessage` says a retry could clear the failure, which
+for a Transfer means an insufficient Available Balance — re-calls `mutate` with those same
+variables for exactly that reason. Correcting the amount is a different intent, and the
+module hands out a new key for it without being asked.
+
+Failures render like the Accounts screen's: `problemToMessage`'s heading and advice, the
+service's own sentence under each field it named, and anything it refused that this form
+has no field for listed underneath. Editing anything resets the mutation, so a refusal of
+an amount no longer in the box does not survive the correction. The submit button is
+disabled only while a request is in flight, never for the form being invalid.
+
 ## The API types, and when to regenerate them
 
 **Nothing here describes the API by hand.** `src/api/schema.gen.ts` is generated from the
@@ -537,14 +606,22 @@ test('the balance comes from the API', async ({ api, page }) => {
 | `api.accounts(accounts)` | what `GET /api/accounts` answers with, from the next request on |
 | `api.opensAccount(account)` | what `POST /api/accounts` answers with, as a `201` |
 | `api.transfers(transfers)` | what `GET /api/transfers` answers with |
+| `api.requestsTransfer(transfer)` | what `POST /api/transfers` answers with, as a `201` |
 | `api.transfer(transfer)` | what `GET /api/transfers/{id}` answers with, at the ID the Transfer carries |
 | `api.refuses(method, path, problem, params?)` | a refusal instead of a success; the document carries its own status |
 | `api.timesAsked(method, path, params?)` | how many times the browser has asked, since the spec began |
 | `api.bodySent(method, path, params?)` | the parsed body of the last request the browser sent there |
+| `api.headersSent(method, path, params?)` | the headers of that request, **named in lower case** |
 
 `api.bodySent` is what a form's conversion is asserted through, and it is the only thing
 that can be: a screen rendering `100.50` correctly says nothing about whether `100.50` or
 `10050` left the browser, and only the second is what the backend's `long` counts.
+
+`api.headersSent` is the same argument one layer up. Nothing on the transfer form renders
+the Idempotency Key, so whether two attempts went out under one key is a fact about the
+wire and about nothing a DOM assertion could reach. Playwright normalises header names, so
+the spec reads `headers['x-idempotency-key']` — the obvious spelling silently reads
+`undefined`, and two `undefined`s compare equal.
 
 **Calling one of these again replaces the answer** rather than adding a second route, which
 is how a spec makes truth change mid-test. A path a spec never scripts answers `404` with a

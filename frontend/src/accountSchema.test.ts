@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { messagesUnder, newAccountSchema, serverRefusalIn } from './accountSchema'
+import { newAccountSchema, serverRefusalIn } from './accountSchema'
 import schemaSource from './accountSchema.ts?raw'
 import { plainModuleRules } from './testsupport/plainModule'
 
@@ -124,51 +124,6 @@ describe('where a refusal of the request lands on the form', () => {
       currency: 'must not be null',
     })
   })
-
-  /** Dropping it would leave an operator with a heading and no reason. */
-  it('keeps a refusal of something this form has no field for, under the name used for it', () => {
-    const { perField, unattached } = serverRefusalIn(
-      aRefusal([
-        { field: null, message: 'the request was refused as a whole' },
-        { field: 'somethingElse', message: 'must be smaller' },
-      ]),
-    )
-
-    expect(perField).toEqual({})
-    expect(unattached).toEqual(['the request was refused as a whole', 'somethingElse: must be smaller'])
-  })
-
-  /** What a mutation that has not failed carries, and what a gateway's error page is. */
-  it('is nothing refused for a failure that named no members, and for no failure at all', () => {
-    for (const failure of [null, undefined, new Error('offline'), aRefusal([])]) {
-      expect(serverRefusalIn(failure)).toEqual({ perField: {}, unattached: [] })
-    }
-  })
-})
-
-describe('what is shown under one field', () => {
-  it('reads the message out of whatever the form library kept of an issue', () => {
-    expect(messagesUnder([{ message: 'not an amount' }, 'a bare string'], undefined)).toEqual([
-      'not an amount',
-      'a bare string',
-    ])
-  })
-
-  /** The current value's verdict first; the server's describes a payload already replaced. */
-  it('puts what the schema said ahead of what the service said', () => {
-    expect(messagesUnder([{ message: 'not an amount' }], 'must not be null')).toEqual([
-      'not an amount',
-      'must not be null',
-    ])
-  })
-
-  it('is empty when neither said anything, which is what leaves the field unmarked', () => {
-    expect(messagesUnder([], undefined)).toEqual([])
-  })
-
-  it('skips an error carrying no message rather than rendering it as an object', () => {
-    expect(messagesUnder([null, 42, {}], undefined)).toEqual([])
-  })
 })
 
 /**
@@ -177,5 +132,5 @@ describe('what is shown under one field', () => {
  * rendering the form.
  */
 describe('the module itself', () => {
-  plainModuleRules(schemaSource, ['zod', './api/types', './api/validation', './money'])
+  plainModuleRules(schemaSource, ['zod', './api/types', './formRefusal', './money'])
 })

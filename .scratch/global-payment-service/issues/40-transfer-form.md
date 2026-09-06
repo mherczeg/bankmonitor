@@ -42,17 +42,98 @@ Carries its own browser spec.
 
 **Blocked by:** 35, 39
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The amount field shows the source Account's Currency as an adornment
-- [ ] Switching the source Account re-validates the entered amount immediately
-- [ ] A self-Transfer is refused without a request being sent
-- [ ] An amount of zero is refused without a request being sent
-- [ ] An insufficient Available Balance is reported readably
-- [ ] Submitting navigates to the Transfer's page
-- [ ] The Idempotency Key is stable across retries of one intent, and resets on a success or
+- [x] The amount field shows the source Account's Currency as an adornment
+- [x] Switching the source Account re-validates the entered amount immediately
+- [x] A self-Transfer is refused without a request being sent
+- [x] An amount of zero is refused without a request being sent
+- [x] An insufficient Available Balance is reported readably
+- [x] Submitting navigates to the Transfer's page
+- [x] The Idempotency Key is stable across retries of one intent, and resets on a success or
       a corrected payload — never on a failure alone
-- [ ] The payload handed to `keyFor` is the submitted one, so a mid-flight edit cannot change
+- [x] The payload handed to `keyFor` is the submitted one, so a mid-flight edit cannot change
       the key an attempt in progress goes out under
-- [ ] A browser spec covers submit-and-navigate, the Currency re-validation and the
+- [x] A browser spec covers submit-and-navigate, the Currency re-validation and the
       self-Transfer refusal
+
+## Comments
+
+**"`startIntent()` once when the form becomes ready" is a sentence about a lifetime, so it
+was made structural rather than a discipline.** The route owns the `queryKeys.accounts()`
+query and its states; `-newTransferForm.tsx` takes the loaded list as a prop. The form
+therefore cannot exist before the list does, and `useRef(startIntent())` runs once per
+screen rather than once per render of a spinner. The one-component version would work and
+would rest the claim on React's ref semantics across a loading state instead of on the
+component's lifetime. It also gives `transferSchemaFor` a non-optional argument, which is
+the shape it should have — a schema built over a list that has not loaded would refuse
+every Account as unknown.
+
+**The key is read off the mutation's variables, and that is the whole of the retry rule.**
+`mutationFn: (transfer) => requestTransfer(transfer, keys.current.keyFor(transfer))` — the
+`transfer` parameter, never anything in scope, so there is no form state in that function
+to read. TanStack re-invokes it with the variables `mutate` was called with, which makes
+the ticket's sharpest checkbox a property of the file rather than a default being relied
+on. The **Try again** button re-calls `mutate(requesting.variables)` for the same reason.
+Ticket 35's module cannot enforce any of it — it is never told a submit happened — so the
+browser spec reads the header instead: **nothing on this screen renders the Idempotency
+Key**, so a form minting a fresh one per attempt would pass every assertion a DOM can
+carry. The harness gained `headersSent` for that, and Playwright lowercases header names,
+so the spec reads `['x-idempotency-key']`; the obvious spelling silently reads `undefined`,
+and two `undefined`s compare equal.
+
+**`succeeded()` is called into a form that is already unmounting**, and is called anyway.
+`onSuccess` navigates away, so the ref goes with it and the call changes nothing
+observable. Skipping it would make this screen depend on routing to end an intent — a
+dependency neither module records — and the line that replaced it would be a comment
+explaining why the module's contract is not honoured here.
+
+**The self-Transfer sentence lands on the destination.** §22 puts the rule in the
+form-level validator and stops there; what is still to choose is which field carries it,
+because a two-entry issue path prints it twice. The money is already leaving the Account
+the operator chose first, so the destination is the side they will change — attaching it to
+the source would be telling them to undo the decision they had made rather than the one
+they had not.
+
+**Zero came back, exactly where ticket 39 said it would.** That ticket moved the rule out
+of `parseAmount` — an Account may be opened with nothing in it — and named the cost as this
+ticket's. It is one line and one sentence here, *"A Transfer has to move more than
+nothing."* The negative case is where the two forms visibly diverge: an Account cannot open
+owing money, and a Transfer of a negative amount is a Transfer the other way round, so this
+one says *"Swap the two Accounts to send it the other way."*
+
+**Two extractions, one from each side of the build.** `formRefusal.ts` takes
+`serverRefusalIn` and `messagesUnder` out of `accountSchema.ts` now that a second form
+wants them; each schema exports its own binding over its member → field map, so no call
+site changed. `testsupport/fetchAnswers.ts` does the same for the `fetch` stub
+`api/accounts.test.ts` had inline, on ticket 35's `plainModuleRules` precedent — a second
+copy of test apparatus is the moment it becomes a module. What did **not** move is the
+copy: three of the four amount sentences match the new-Account form word for word and are
+written out again, on ticket 33's rule that `money.ts` owns the rule and each form owns its
+wording.
+
+**Rejected — rendering the Available Balance out of the refusal.** The backend puts
+`availableBalanceMinorUnits` and `currency` on the `insufficient-funds` document, and
+*"the Available Balance is 40.00 EUR"* would be better advice than *"does not cover this
+amount"*. Taking it would make a second reader of the document that branches on the URN,
+which is §18's single discriminator growing a second one; ticket 34 asserts at source level
+that `problem.ts` never reads a status for the same reason. The figure is not lost, only
+sourced from the endpoint that owns it — the Accounts screen shows every Available Balance,
+and the source `<select>` here shows each Account's beside its identifier.
+
+**Rejected — a client-side cross-currency rule.** Ticket 26 makes a cross-currency Transfer
+legal, so a rule written here would be one to delete rather than reword. `problem.ts`
+already has wording for the refusal, and it says "yet" for exactly this reason.
+
+**Nothing is invalidated on success.** Ticket 39's form invalidates the Accounts list
+because the row it created has to appear on the same screen; this one navigates away, and
+ticket 38 settled that there is no `staleTime`, so every screen refetches on mount. An
+invalidation here would refetch a list being unmounted.
+
+**The one gap, and it moved rather than repeating.** The button reads *Requesting…* and is
+disabled while the `POST` is open, and no spec asserts it — ticket 37's harness answers
+immediately. Ticket 39's `deferred.md` entry said the next spec wanting this should build
+the held-answer mechanism; this is that spec by count and not by need, since none of the
+checkboxes above is about an in-flight state, and the one place a double submit could have
+cost something is the one place the Idempotency Key already covers it. The entry now names
+ticket 41 instead, whose subject is a state a spec has to be able to hold open.

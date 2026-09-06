@@ -691,14 +691,16 @@ contract that would move, not just the screen.
 
 ## In-flight states have no browser coverage
 
-**Deferred.** Two screens render something only while a request is open, and no
-browser spec asserts either. `/accounts` renders three states and its spec
+**Deferred.** Three screens render something only while a request is open, and no
+browser spec asserts any of them. `/accounts` renders three states and its spec
 covers two — the populated list, the empty service and both error shapes are
 covered, the spinner is not
 ([ticket 38](design-decisions/38-accounts-list-screen.md)). The form above it
 disables its button and reads *Opening…* while the `POST` is in flight, and its
 spec covers everything except that
-([ticket 39](design-decisions/39-create-account-form.md)).
+([ticket 39](design-decisions/39-create-account-form.md)). `/transfers/new` has
+both shapes — a spinner over the Accounts query and a *Requesting…* button over
+the mutation ([ticket 40](design-decisions/40-transfer-form.md)).
 
 **Why deferred:** the harness answers every scripted request immediately and
 offers no way to hold one open (design decisions §24,
@@ -708,20 +710,31 @@ racing a local `route.fulfill` — green on a quiet machine, flaky on a loaded
 one — and adding a delay for it would put a waiting mechanism into the one seam
 whose design property is that no spec waits on a clock.
 
-**Residual risk, and it is small:** both branches are markup with no logic in
-them, rendered from state the query client and the mutation own — `isPending`
-and `isSubmitting`. What is unproven is that they appear at all; a mistyped
-condition would show nothing during the request and no test would notice. The
-form's is the slightly worse of the two: a disabled attribute that never became
-true would let a second press send a second `POST`, and that request carries no
-Idempotency Key to make the duplicate harmless.
+**Residual risk, and it is small:** every one of these branches is markup with no
+logic in it, rendered from state the query client and the mutation own —
+`isPending` and `isSubmitting`. What is unproven is that they appear at all; a
+mistyped condition would show nothing during the request and no test would
+notice. Ticket 39's is the worst of them: a disabled attribute that never became
+true would let a second press send a second `POST`, and **that** request carries
+no Idempotency Key to make the duplicate harmless. Ticket 40's identical-looking
+button is the mildest for the same reason read backwards — two presses there go
+out under one key, and the backend collapses them into one Transfer, which is
+what §3 built idempotency for.
 
 **What it would take:** a *held* answer rather than a delayed one — a scripted
 response the spec releases when it chooses, so the sequence stays ordered by the
 spec: assert the spinner, release the answer, assert the table. That keeps the
-"no timers" property intact. Ticket 38 left it until a second screen wanted the
-same assertion; ticket 39 is that screen, so the next spec that needs it should
-build the mechanism rather than defer a third time.
+"no timers" property intact.
+
+**Why it is still deferred after a third screen.** Ticket 39's record said the
+next spec wanting this assertion should build the mechanism rather than defer
+again. Ticket 40 is that spec by count and is not by need: none of its checkboxes
+is about an in-flight state, and the one place a double submit could have cost
+something is the one place the Idempotency Key already covers. The trigger is
+therefore restated rather than repeated — **the screen that should build it is the
+one whose in-flight state is load-bearing**, which is ticket 41's Transfer page:
+a `PENDING` Transfer's own rendering is a state a spec has to be able to hold
+open, and holding it is that ticket's subject rather than a side assertion.
 
 ---
 

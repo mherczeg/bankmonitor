@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "npm run routes && tsc -b && vite build",
     "routes": "tsr generate",
-    "api-types": "openapi-typescript http://localhost:8080/v3/api-docs --output src/api/schema.gen.ts",
+    "api-types": "openapi-typescript ${BACKEND_URL:-http://localhost:8080}/v3/api-docs --output src/api/schema.gen.ts",
     "test": "vitest run",
     "lint": "oxlint",
     "preview": "vite preview"

@@ -25,6 +25,22 @@ cd .. && ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 `/api` and `/internal` are proxied to `http://localhost:8080`, so the browser only ever
 sees one origin in development.
 
+**Two stacks at once** — a second copy for a review or a comparison — needs both halves
+moved, because the pair is what has to line up:
+
+```bash
+cd .. && ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev \
+  -Dspring-boot.run.arguments=--server.port=8081
+
+BACKEND_URL=http://localhost:8081 npm run dev -- --port 5174
+```
+
+`BACKEND_URL` is read by `vite.config.ts` and by `npm run api-types`; the port is a Vite
+flag. `strictPort` stays on deliberately, so a port already taken is an error at startup
+rather than a second server silently answering on a port nobody meant. Nothing else needs
+changing: the browser still talks only to the dev server, so
+`payments.cors.allowed-origins` on the backend is not involved.
+
 | Command | What it does |
 |---|---|
 | `npm run dev` | Vite dev server with hot reload |

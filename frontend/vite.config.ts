@@ -2,8 +2,9 @@ import react from '@vitejs/plugin-react'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import { defineConfig } from 'vite'
 
+// BACKEND_URL moves the proxy off 8080, for running a second stack beside a first one.
 const toBackend = {
-  target: 'http://localhost:8080',
+  target: process.env.BACKEND_URL ?? 'http://localhost:8080',
   changeOrigin: true,
   // Compression clumps the SSE stream: docs/design-decisions/31-frontend-toolchain.md
   headers: { 'Accept-Encoding': 'identity' },

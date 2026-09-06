@@ -81,7 +81,7 @@ class ConcurrentVerdictsSettleTheTransferOnceTest extends TransferScenario {
 	@Test
 	@DisplayName("the last two Checks approving at once settle the Transfer exactly once")
 	void theLastTwoChecksApprovingAtOnceSettleTheTransferOnce() throws Exception {
-		long transfer = reservation.reserve(transferOf(AMOUNT, SOURCE, DESTINATION)).getId();
+		long transfer = reserve(transferOf(AMOUNT, SOURCE, DESTINATION)).getId();
 
 		List<Outcome> outcomes = race(transfer, FRAUD, MANUAL_APPROVAL);
 

@@ -3,7 +3,6 @@ package hu.bankmonitor.payments.transfers;
 import hu.bankmonitor.payments.accounts.Account;
 import hu.bankmonitor.payments.accounts.AccountLocking;
 import hu.bankmonitor.payments.accounts.LockedAccounts;
-import hu.bankmonitor.payments.common.Money;
 import hu.bankmonitor.payments.transfers.checks.CheckLedger;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <ol>
  * <li>refuse a self-Transfer, which the request decides on its own;
  * <li>lock both Accounts, ascending by ID, which {@link AccountLocking} owns;
- * <li>refuse a cross-Currency Transfer, at the first moment both Currencies are known;
+ * <li>check that the amounts phase two resolved are denominated by the Accounts now locked;
  * <li><em>then</em> read the source Account's Available Balance and test the amount against
  * it;
  * <li>write the reservation, the Transfer, and the Check Ledger the Transfer will be
@@ -38,19 +37,14 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code AccountRepository} package-private, and locking is the whole of what {@code
  * accounts} exports.
  *
- * <p>The Exchange Rate is deliberately not fetched here. Design decision 4 puts it in a
- * phase of its own with no transaction open and no locks held, which is what makes
- * pessimistic locking affordable at all; {@code LockedPathTouchesOnlyTheDatabaseTest} names
- * this class and fails if anything it can reach would wait on a provider.
- *
- * <p><b>Same-Currency Transfers only, and refused rather than written.</b> Both amounts on
- * the Transfer are denominated by the source Account, so a Transfer between two Currencies
- * has no honest figure for the credited side. Step 3 refuses it; it does not sit later,
- * because {@link Account#reserve} <em>is</em> the write and a refusal after it has already
- * recorded the reservation it meant to prevent. What the refusal names is a capability this
- * service lacks rather than a rule it keeps, so ticket 26 gives the credited side an
- * Exchange Rate of its own and deletes the check along with {@link
- * CrossCurrencyTransferNotSupportedException}.
+ * <p><b>The Exchange Rate is deliberately not fetched here, and this class cannot reach the
+ * code that would.</b> Design decision 4 puts the fetch in a phase of its own with no
+ * transaction open and no locks held, which is what makes pessimistic locking affordable at
+ * all. {@link TransferQuotes} is that phase, and it hands the result down as {@link
+ * ConvertedAmounts} — a type that names nothing from {@code fx}, so that
+ * {@code LockedPathTouchesOnlyTheDatabaseTest}, which walks everything this class can reach
+ * and fails on a dependency into that package, keeps holding the line rather than having to
+ * make an exception for the ticket that gave this method a rate.
  */
 @Service
 class FundsReservation {
@@ -71,10 +65,12 @@ class FundsReservation {
 	 * Reserves the amount on the source Account and records the {@code PENDING} Transfer it
 	 * is held for, in one transaction that writes both or neither.
 	 *
-	 * <p>The transaction is opened here rather than inherited, which is what {@link
-	 * AccountLocking}'s mandatory propagation is checking for. Ticket 16 will widen it to
-	 * carry the idempotency record's flip to {@code SUCCEEDED} in the same commit, per
-	 * design decision 4.
+	 * <p>The transaction is joined from {@code IdempotentExecution}, which opens it around
+	 * this call so that the idempotency record's flip to {@code SUCCEEDED} commits with the
+	 * reservation it reports (design decision 4). {@code @Transactional} stays because the
+	 * mandatory propagation of {@link AccountLocking} is checking that <em>some</em>
+	 * transaction is open, and because a caller reaching this method any other way must
+	 * still get one.
 	 *
 	 * <p>The Check Ledger is opened last because its rows point at the Transfer's ID, and
 	 * inside the same transaction because a {@code PENDING} Transfer with an empty Check
@@ -88,30 +84,51 @@ class FundsReservation {
 	 *                                                                  Account's Available
 	 *                                                                  Balance does not
 	 *                                                                  cover the amount
+	 * @param amounts what {@link TransferQuotes} resolved for this request, outside this
+	 *                transaction and before any lock was taken
 	 * @throws SelfTransferNotAllowedException if both IDs name the same Account
-	 * @throws CrossCurrencyTransferNotSupportedException if the two Accounts are denominated
-	 *                                                   differently
+	 * @throws IllegalStateException if the Accounts are not denominated as the amounts say
 	 */
 	@Transactional
-	public Transfer reserve(ReservationRequest request) {
+	public Transfer reserve(ReservationRequest request, ConvertedAmounts amounts) {
 		if (request.sourceAccountId() == request.destinationAccountId()) {
 			throw new SelfTransferNotAllowedException(request.sourceAccountId());
 		}
 
 		LockedAccounts locked =
 				accounts.lockForTransfer(request.sourceAccountId(), request.destinationAccountId());
-		if (locked.source().getCurrency() != locked.destination().getCurrency()) {
-			throw new CrossCurrencyTransferNotSupportedException(locked.source().getCurrency(),
-					locked.destination().getCurrency());
-		}
+		requireTheAmountsMatchTheLockedAccounts(locked, amounts);
 
-		Money amount = new Money(request.amountMinorUnits(), locked.source().getCurrency());
-
-		locked.source().reserve(amount);
+		locked.source().reserve(amounts.debitedAmount());
 
 		Transfer requested = transfers.save(new Transfer(request.sourceAccountId(),
-				request.destinationAccountId(), amount, amount, request.requestedAt()));
+				request.destinationAccountId(), amounts, request.requestedAt()));
 		ledger.openFor(requested);
 		return requested;
+	}
+
+	/**
+	 * The seam where phase two's unlocked read meets the locked one, checked rather than
+	 * assumed.
+	 *
+	 * <p>It cannot fire today: an Account's Currency is fixed when it is opened and nothing
+	 * changes it, which is the entire argument for reading it without a lock in the first
+	 * place. What it holds is the day that stops being true. A redenomination — or an
+	 * Account deleted and its ID reused — would otherwise land here as two amounts quietly
+	 * denominated in a Currency neither Account holds, and {@link Account#reserve} would
+	 * refuse the debited side while nothing at all questioned the credited one.
+	 *
+	 * <p>Unchecked and uncaught, because a caller cannot act on it and an operator did
+	 * nothing wrong.
+	 */
+	private static void requireTheAmountsMatchTheLockedAccounts(
+			LockedAccounts locked, ConvertedAmounts amounts) {
+		if (locked.source().getCurrency() != amounts.debitedAmount().currency()
+				|| locked.destination().getCurrency() != amounts.creditedAmount().currency()) {
+			throw new IllegalStateException(
+					"a %s to %s transfer was quoted, and the accounts are denominated in %s and %s"
+							.formatted(amounts.debitedAmount().currency(), amounts.creditedAmount().currency(),
+									locked.source().getCurrency(), locked.destination().getCurrency()));
+		}
 	}
 }

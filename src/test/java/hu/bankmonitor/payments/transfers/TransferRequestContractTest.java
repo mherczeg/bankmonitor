@@ -5,6 +5,7 @@ import hu.bankmonitor.payments.accounts.UnknownAccountException;
 import hu.bankmonitor.payments.common.Currency;
 import hu.bankmonitor.payments.common.Money;
 import hu.bankmonitor.payments.common.ProblemType;
+import hu.bankmonitor.payments.fx.ExchangeRateUnavailableException;
 import hu.bankmonitor.payments.idempotency.IdempotencyKeyReusedException;
 import hu.bankmonitor.payments.idempotency.IdempotentExecution;
 import hu.bankmonitor.payments.idempotency.RequestInProgressException;
@@ -25,11 +26,14 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.InstanceOfAssertFactories.BIG_DECIMAL;
 import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -51,6 +55,19 @@ class TransferRequestContractTest {
 
 	private static final Instant REQUESTED_AT = Instant.parse("2026-09-06T09:41:00Z");
 
+	/**
+	 * Later than the request it prices, which is the order the application actually produces:
+	 * {@code createdAt} is stamped from the injected clock at the top of the controller method,
+	 * before the Idempotency Key is even claimed, and the quote comes back from the provider
+	 * some way into phase two. The intuitive reading — a rate is fetched, then the Transfer it
+	 * prices is written — is wrong about which instant {@code createdAt} holds.
+	 *
+	 * <p>The gap itself is what matters: a fixture where the two agreed would let a response
+	 * that reported the wrong one of the two timestamps still pass. {@code TransferRows} places
+	 * its rows to the same ordering.
+	 */
+	private static final Instant RATE_FETCHED_AT = Instant.parse("2026-09-06T09:41:02Z");
+
 	private static final String IDEMPOTENCY_KEY = "0d1f6c1e-6b0a-4a5f-9f1a-2c3d4e5f6a7b";
 
 	private static final String VALID_PAYLOAD = """
@@ -58,6 +75,9 @@ class TransferRequestContractTest {
 
 	@Autowired
 	private MockMvcTester mvc;
+
+	@MockitoBean
+	private TransferQuotes quotes;
 
 	@MockitoBean
 	private FundsReservation reservation;
@@ -77,27 +97,34 @@ class TransferRequestContractTest {
 	}
 
 	/**
-	 * A first request for every key, unless a test says otherwise: the port runs the
-	 * operation it was handed and returns what it answered. Without it every assertion in
-	 * this class about the {@code 201} would be made against the {@code null} an unstubbed
-	 * mock returns, which is not what an endpoint with no duplicate to resolve does.
+	 * A first request for every key, unless a test says otherwise: the port resolves what it
+	 * was handed, runs the operation over the result and returns what that answered. Without
+	 * it every assertion in this class about the {@code 201} would be made against the {@code
+	 * null} an unstubbed mock returns, which is not what an endpoint with no duplicate to
+	 * resolve does.
 	 *
-	 * <p>The three tests that replace this stubbing use {@code willX().given(mock)} rather
+	 * <p>Both phases are run here rather than only the operation, because the order they run
+	 * in is the port's contract and this stub stands in for it. A stub that skipped the
+	 * resolution would let the endpoint pass while handing phase three something it never
+	 * quoted.
+	 *
+	 * <p>The tests that replace this stubbing use {@code willX().given(mock)} rather
 	 * than {@code given(mock.x())}, because the second form <em>calls</em> the mock to
 	 * record what to stub — and calling it here runs the answer above against the null
 	 * arguments the matchers stand in for.
 	 */
 	@BeforeEach
 	void runWhateverTheEndpointHandsToTheIdempotentPort() {
-		given(requests.executeOnce(any(), any(), any(), any()))
-				.willAnswer(call -> call.getArgument(3, Supplier.class).get());
+		given(requests.executeOnce(any(), any(), any(), any(), any()))
+				.willAnswer(call -> call.getArgument(4, Function.class)
+						.apply(call.getArgument(3, Supplier.class).get()));
 	}
 
 	@Test
 	@DisplayName("requesting a Transfer answers 201 with the PENDING Transfer it created")
 	void answersCreatedWithThePendingTransferItRequested() {
 		ReservationRequest expected = new ReservationRequest(5L, 9L, 100_50L, REQUESTED_AT);
-		given(reservation.reserve(expected)).willReturn(pendingTransfer(31L, expected, Currency.EUR));
+		stubBothPhases(31L, expected, sameCurrency(expected, Currency.EUR));
 
 		MvcTestResult result = request("""
 				{"fromAccountId": 5, "toAccountId": 9, "amountMinorUnits": 10050}""");
@@ -125,7 +152,7 @@ class TransferRequestContractTest {
 	@DisplayName("the 201 points at the created Transfer's own URL")
 	void pointsAtTheCreatedTransfersOwnUrl() {
 		ReservationRequest expected = new ReservationRequest(5L, 9L, 100_50L, REQUESTED_AT);
-		given(reservation.reserve(expected)).willReturn(pendingTransfer(31L, expected, Currency.EUR));
+		stubBothPhases(31L, expected, sameCurrency(expected, Currency.EUR));
 
 		MvcTestResult result = request(VALID_PAYLOAD);
 
@@ -134,15 +161,16 @@ class TransferRequestContractTest {
 	}
 
 	/**
-	 * The Currency is never in the payload — it is the source Account's, and only the
-	 * reservation has read that Account under its lock. What the endpoint hands on is
+	 * The Currency is never in the payload — it is the source Account's, and only the two
+	 * phases behind this endpoint have read that Account. What the endpoint hands on is
 	 * therefore a bare count of Minor Units, and both amounts come back denominated.
 	 */
 	@Test
 	@DisplayName("the Currency is derived from the source Account rather than sent by the client")
 	void derivesTheCurrencyFromTheSourceAccount() {
 		ReservationRequest expected = new ReservationRequest(5L, 9L, 90_000L, REQUESTED_AT);
-		given(reservation.reserve(expected)).willReturn(pendingTransfer(4L, expected, Currency.HUF));
+		ConvertedAmounts amounts = sameCurrency(expected, Currency.HUF);
+		stubBothPhases(4L, expected, amounts);
 
 		MvcTestResult result = request("""
 				{"fromAccountId": 5, "toAccountId": 9, "amountMinorUnits": 90000}""");
@@ -152,7 +180,60 @@ class TransferRequestContractTest {
 		assertThat(result).bodyJson().extractingPath("$.debitedAmountCurrency").isEqualTo("HUF");
 		assertThat(result).bodyJson().extractingPath("$.creditedAmountMinorUnits").isEqualTo(90000);
 		assertThat(result).bodyJson().extractingPath("$.creditedAmountCurrency").isEqualTo("HUF");
-		then(reservation).should().reserve(expected);
+		then(reservation).should().reserve(expected, amounts);
+	}
+
+	/**
+	 * A Transfer across two Currencies, end to end over the wire: the destination is credited
+	 * in its own Currency and the rate that got it there is reported with the moment it was
+	 * quoted, so a settled conversion can be checked rather than taken on trust.
+	 *
+	 * <p>HUF on the credited side because its Minor Units are not hundredths, so a figure
+	 * that had picked up or lost a division by a hundred would still read plausibly in EUR
+	 * and does not here.
+	 */
+	@Test
+	@DisplayName("a cross-Currency Transfer reports both amounts, the rate and when it was fetched")
+	void reportsTheRateACrossCurrencyTransferWasConvertedAt() {
+		ReservationRequest expected = new ReservationRequest(5L, 9L, 100_50L, REQUESTED_AT);
+		stubBothPhases(31L, expected, new ConvertedAmounts(
+				new Money(100_50L, Currency.EUR), new Money(39_698L, Currency.HUF),
+				new BigDecimal("395.000000"), RATE_FETCHED_AT));
+
+		MvcTestResult result = request(VALID_PAYLOAD);
+
+		assertThat(result).hasStatus(HttpStatus.CREATED);
+		assertThat(result).bodyJson().extractingPath("$.debitedAmountMinorUnits").isEqualTo(10050);
+		assertThat(result).bodyJson().extractingPath("$.debitedAmountCurrency").isEqualTo("EUR");
+		assertThat(result).bodyJson().extractingPath("$.creditedAmountMinorUnits").isEqualTo(39698);
+		assertThat(result).bodyJson().extractingPath("$.creditedAmountCurrency").isEqualTo("HUF");
+		assertThat(result).bodyJson().extractingPath("$.exchangeRate").convertTo(BIG_DECIMAL)
+				.isEqualByComparingTo("395.000000");
+		assertThat(result).bodyJson().extractingPath("$.exchangeRateFetchedAt")
+				.isEqualTo(RATE_FETCHED_AT.toString());
+	}
+
+	/**
+	 * The two members are <em>absent</em> rather than present and null, which is the contract
+	 * the published schema and the generated client both state: no provider was asked, so there
+	 * is no quote to report, and a rate of {@code 1} would be this API describing a fetch that
+	 * never happened.
+	 *
+	 * <p>Absence is what {@code @JsonInclude(NON_NULL)} on {@link TransferResponse} buys, and
+	 * {@code doesNotHavePath} is what can see it. The neighbouring test asserts the other half —
+	 * that the members are there, with the quote in them, when there was one.
+	 */
+	@Test
+	@DisplayName("a same-Currency Transfer reports no rate at all")
+	void reportsNoRateForATransferThatNeededNone() {
+		ReservationRequest expected = new ReservationRequest(5L, 9L, 100_50L, REQUESTED_AT);
+		stubBothPhases(31L, expected, sameCurrency(expected, Currency.EUR));
+
+		MvcTestResult result = request(VALID_PAYLOAD);
+
+		assertThat(result).hasStatus(HttpStatus.CREATED);
+		assertThat(result).bodyJson().doesNotHavePath("$.exchangeRate");
+		assertThat(result).bodyJson().doesNotHavePath("$.exchangeRateFetchedAt");
 	}
 
 	/**
@@ -207,7 +288,7 @@ class TransferRequestContractTest {
 		@DisplayName("is any well-formed UUID, whatever its version or letter case")
 		void acceptsAnyWellFormedUuid(String idempotencyKey) {
 			ReservationRequest expected = new ReservationRequest(5L, 9L, 100_50L, REQUESTED_AT);
-			given(reservation.reserve(expected)).willReturn(pendingTransfer(31L, expected, Currency.EUR));
+			stubBothPhases(31L, expected, sameCurrency(expected, Currency.EUR));
 
 			MvcTestResult result = requestWithKey(idempotencyKey, VALID_PAYLOAD);
 
@@ -256,8 +337,8 @@ class TransferRequestContractTest {
 		@DisplayName("replays the first request's 201 without reserving anything again")
 		void replaysTheFirstRequestsResponse() {
 			willReturn(new TransferResponse(31L, 5L, 9L, TransferStatus.PENDING,
-					100_50L, Currency.EUR, 100_50L, Currency.EUR, REQUESTED_AT, null))
-					.given(requests).executeOnce(any(), any(), eq(TransferResponse.class), any());
+					100_50L, Currency.EUR, 100_50L, Currency.EUR, null, null, REQUESTED_AT, null))
+					.given(requests).executeOnce(any(), any(), eq(TransferResponse.class), any(), any());
 
 			MvcTestResult result = request(VALID_PAYLOAD);
 
@@ -276,7 +357,7 @@ class TransferRequestContractTest {
 		@DisplayName("whose first request has not finished is 409 with Retry-After")
 		void refusesAKeyWhoseWorkIsUnfinished() {
 			willThrow(new RequestInProgressException(IDEMPOTENCY_KEY))
-					.given(requests).executeOnce(any(), any(), any(), any());
+					.given(requests).executeOnce(any(), any(), any(), any(), any());
 
 			MvcTestResult result = request(VALID_PAYLOAD);
 
@@ -294,7 +375,7 @@ class TransferRequestContractTest {
 		@DisplayName("carrying a different payload is 409 with no Retry-After")
 		void refusesAKeyReusedForADifferentPayload() {
 			willThrow(new IdempotencyKeyReusedException(IDEMPOTENCY_KEY))
-					.given(requests).executeOnce(any(), any(), any(), any());
+					.given(requests).executeOnce(any(), any(), any(), any(), any());
 
 			MvcTestResult result = request(VALID_PAYLOAD);
 
@@ -316,7 +397,7 @@ class TransferRequestContractTest {
 
 			then(requests).should().executeOnce(eq(IDEMPOTENCY_KEY),
 					eq(new CreateTransferRequest(5L, 9L, 100_50L).payloadHash()),
-					eq(TransferResponse.class), any());
+					eq(TransferResponse.class), any(), any());
 		}
 	}
 
@@ -349,23 +430,25 @@ class TransferRequestContractTest {
 	}
 
 	/**
-	 * The refusals that cannot be decided from the payload alone, each arriving from the
-	 * reservation as its own exception and leaving as its own {@code type} URN. The status
-	 * is {@code 422} throughout: every one of them is a well-formed request this API
-	 * understood and would not carry out, which is a different thing from the {@code 400}s
-	 * above.
+	 * The refusals that cannot be decided from the payload alone, each arriving from one of
+	 * the two phases behind the endpoint as its own exception and leaving as its own
+	 * {@code type} URN. The status is {@code 422} throughout: every one of them is a
+	 * well-formed request this API understood and would not carry out, which is a different
+	 * thing from the {@code 400}s above.
 	 *
-	 * <p>Told apart by their URN and not by their status, because a client that had to read
+	 * <p>Which phase raised one is deliberately invisible from here. A conversion that rounds
+	 * to zero is decided above the lock and an overdraft under it, and a client has no use for
+	 * that distinction — what it branches on is the URN, because a client that had to read
 	 * {@code detail} to know which of the four it met would be parsing prose.
 	 */
 	@Nested
-	@DisplayName("a refusal from the reservation")
+	@DisplayName("a refusal from behind the endpoint")
 	class Refusals {
 
 		@Test
 		@DisplayName("names the Account a Transfer to itself was asked for")
 		void namesTheAccountOfASelfTransfer() {
-			given(reservation.reserve(any())).willThrow(new SelfTransferNotAllowedException(5L));
+			given(reservation.reserve(any(), any())).willThrow(new SelfTransferNotAllowedException(5L));
 
 			MvcTestResult result = request("""
 					{"fromAccountId": 5, "toAccountId": 5, "amountMinorUnits": 10050}""");
@@ -381,7 +464,7 @@ class TransferRequestContractTest {
 		@Test
 		@DisplayName("says which of the two Accounts does not exist")
 		void saysWhichAccountDoesNotExist() {
-			given(reservation.reserve(any())).willThrow(new UnknownAccountException(9L));
+			given(reservation.reserve(any(), any())).willThrow(new UnknownAccountException(9L));
 
 			MvcTestResult result = request(VALID_PAYLOAD);
 
@@ -398,7 +481,7 @@ class TransferRequestContractTest {
 		@Test
 		@DisplayName("reports both amounts an overdraft check compared")
 		void reportsBothAmountsTheOverdraftCheckCompared() {
-			given(reservation.reserve(any())).willThrow(new InsufficientFundsException(
+			given(reservation.reserve(any(), any())).willThrow(new InsufficientFundsException(
 					new Money(40_00L, Currency.EUR), new Money(100_50L, Currency.EUR)));
 
 			MvcTestResult result = request(VALID_PAYLOAD);
@@ -410,22 +493,62 @@ class TransferRequestContractTest {
 		}
 
 		/**
-		 * Refused rather than converted, and refused rather than written: until ticket 26
-		 * fetches an Exchange Rate there is no figure to credit the destination Account
-		 * with, and the Currency this endpoint can derive is the source Account's alone.
+		 * Refused rather than written, and everything the conversion compared travels with the
+		 * refusal: the amount, what it was going into, and the rate that made it nothing. An
+		 * operator's remedy is to send more, and a refusal that named none of the three would
+		 * not tell them how much more.
+		 *
+		 * <p>The rate is asserted by comparing numbers rather than strings, because a
+		 * {@code BigDecimal} serialised through JSON keeps its scale and {@code 390.000000} and
+		 * {@code 390.0} are the same rate.
 		 */
 		@Test
-		@DisplayName("names both Currencies of a Transfer this service cannot convert yet")
-		void namesBothCurrenciesOfATransferItCannotConvert() {
-			given(reservation.reserve(any()))
-					.willThrow(new CrossCurrencyTransferNotSupportedException(Currency.EUR, Currency.HUF));
+		@DisplayName("names everything a conversion that rounded to zero compared")
+		void namesEverythingAConversionToZeroCompared() {
+			given(quotes.convert(any())).willThrow(new ConversionRoundsToZeroException(
+					new Money(1L, Currency.HUF), Currency.EUR, new BigDecimal("0.002564")));
 
 			MvcTestResult result = request(VALID_PAYLOAD);
 
-			assertThatIsARefusal(result, ProblemType.CROSS_CURRENCY_UNSUPPORTED);
-			assertThat(result).bodyJson().extractingPath("$.sourceCurrency").isEqualTo("EUR");
-			assertThat(result).bodyJson().extractingPath("$.destinationCurrency").isEqualTo("HUF");
+			assertThatIsARefusal(result, ProblemType.CONVERSION_ROUNDS_TO_ZERO);
+			assertThat(result).bodyJson().extractingPath("$.debitedAmountMinorUnits").isEqualTo(1);
+			assertThat(result).bodyJson().extractingPath("$.debitedAmountCurrency").isEqualTo("HUF");
+			assertThat(result).bodyJson().extractingPath("$.destinationCurrency").isEqualTo("EUR");
+			assertThat(result).bodyJson().extractingPath("$.exchangeRate").convertTo(BIG_DECIMAL)
+					.isEqualByComparingTo("0.002564");
+			then(reservation).shouldHaveNoInteractions();
 		}
+	}
+
+	/**
+	 * The one failure this endpoint answers that is nobody's fault on this side of the wire,
+	 * and so the one that is neither a {@code 4xx} nor an accident: a {@code 503} saying the
+	 * request was fine and a third party was not.
+	 *
+	 * <p>Asserted apart from {@link #assertThatIsARefusal}, which fixes the status at
+	 * {@code 422} — the point of this one is that it is not one of those.
+	 */
+	@Test
+	@DisplayName("a provider that never answered is 503 with a Retry-After and what was asked of it")
+	void reportsAnUnpricedTransferAsAnOutageWorthRetrying() {
+		given(quotes.convert(any())).willThrow(
+				new ExchangeRateUnavailableException(Currency.EUR, Currency.HUF, 3, new RuntimeException("timeout")));
+
+		MvcTestResult result = request(VALID_PAYLOAD);
+
+		assertThat(result).hasStatus(HttpStatus.SERVICE_UNAVAILABLE);
+		assertThat(result).hasContentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON);
+		assertThat(result).bodyJson().extractingPath("$.type")
+				.isEqualTo(ProblemType.FX_PROVIDER_UNAVAILABLE.urn());
+		assertThat(result).bodyJson().extractingPath("$.title").isNotNull();
+		assertThat(result).bodyJson().extractingPath("$.detail").asString().isNotBlank();
+		assertThat(result).bodyJson().extractingPath("$.status").isEqualTo(503);
+		assertThat(result).bodyJson().extractingPath("$.instance").isEqualTo("/api/transfers");
+		assertThat(result).headers().hasSingleValue(HttpHeaders.RETRY_AFTER, "5");
+		assertThat(result).bodyJson().extractingPath("$.baseCurrency").isEqualTo("EUR");
+		assertThat(result).bodyJson().extractingPath("$.quoteCurrency").isEqualTo("HUF");
+		assertThat(result).bodyJson().extractingPath("$.attempts").isEqualTo(3);
+		then(reservation).shouldHaveNoInteractions();
 	}
 
 	private MvcTestResult request(String body) {
@@ -493,11 +616,31 @@ class TransferRequestContractTest {
 	 * The identifier is the database's to hand out, so a Transfer that has one is one that
 	 * has been saved — the state this test has to stand in for.
 	 */
-	private static Transfer pendingTransfer(long id, ReservationRequest request, Currency currency) {
-		Money amount = new Money(request.amountMinorUnits(), currency);
+	private static Transfer pendingTransfer(long id, ReservationRequest request, ConvertedAmounts amounts) {
 		Transfer transfer = new Transfer(request.sourceAccountId(), request.destinationAccountId(),
-				amount, amount, request.requestedAt());
+				amounts, request.requestedAt());
 		ReflectionTestUtils.setField(transfer, "id", id);
 		return transfer;
+	}
+
+	/**
+	 * Both phases stubbed for one request, because the endpoint reaches them in order and a
+	 * test that stubbed only the second would be asserting against the {@code null} the first
+	 * one's mock hands back.
+	 *
+	 * <p>The same {@link ConvertedAmounts} instance goes into the reservation's stubbing as
+	 * comes out of the quote's, which is the wiring claim: what phase two resolved is what
+	 * phase three is given.
+	 */
+	private Transfer stubBothPhases(long id, ReservationRequest request, ConvertedAmounts amounts) {
+		Transfer transfer = pendingTransfer(id, request, amounts);
+		given(quotes.convert(request)).willReturn(amounts);
+		given(reservation.reserve(request, amounts)).willReturn(transfer);
+		return transfer;
+	}
+
+	/** A Transfer between two Accounts in one Currency, which is most of the cases here. */
+	private static ConvertedAmounts sameCurrency(ReservationRequest request, Currency currency) {
+		return ConvertedAmounts.unconverted(new Money(request.amountMinorUnits(), currency));
 	}
 }

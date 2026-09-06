@@ -51,7 +51,7 @@ class RecordingAVerdictLocksTheTransferTest extends TransferScenario {
 	@Test
 	@DisplayName("recording a Verdict locks the Transfer's row, before any Account's")
 	void locksTheTransferRowFirst() {
-		long transfer = reservation.reserve(transferOf(80_00L, SOURCE, DESTINATION)).getId();
+		long transfer = reserve(transferOf(80_00L, SOURCE, DESTINATION)).getId();
 		statements.forget();
 
 		verdicts.recordVerdict(transfer, FRAUD, APPROVED);
@@ -84,7 +84,7 @@ class RecordingAVerdictLocksTheTransferTest extends TransferScenario {
 	@Test
 	@DisplayName("settling locks the Transfer's row before either Account's")
 	void locksTheTransferBeforeTheAccountsItSettlesAgainst() {
-		long transfer = reservation.reserve(transferOf(80_00L, SOURCE, DESTINATION)).getId();
+		long transfer = reserve(transferOf(80_00L, SOURCE, DESTINATION)).getId();
 		verdicts.recordVerdict(transfer, FRAUD, APPROVED);
 		statements.forget();
 

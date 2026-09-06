@@ -146,6 +146,10 @@ path is the `FAILED` one and a crash leaves `IN_PROGRESS`.
 > **Phase 3 is built in [ticket 13](13-reserve-funds.md)** and reached over HTTP in
 > **[ticket 14](14-request-transfer-endpoint.md)**, whose transaction is the one ticket 16
 > widens to carry the idempotency record's flip in the same commit.
+> **[Ticket 26](26-cross-currency-transfers.md)** is the first caller with a phase two, and
+> it puts the *conversion* there as well as the fetch — because the rule that keeps a
+> provider call out of the locked transaction bans the whole `fx` package, arithmetic
+> included.
 
 ---
 
@@ -468,6 +472,12 @@ Rate staleness on a long-pending transfer is already handled: **the quote's
 validity window and the check deadline in §14 are the same clock.** A transfer
 that outlives its quote expires and releases its funds. Whether to re-quote
 instead is a business decision, not a technical one.
+
+> **[Ticket 26](26-cross-currency-transfers.md)** stores it, as two columns rather
+> than the whole `ExchangeRate` record [ticket 25](25-exchange-rate-client.md)
+> expected — the pair is already the two amount Currencies, and a second copy of it
+> is a second thing that can disagree. Both columns are null for a same-Currency
+> Transfer, which asked no provider anything.
 
 ---
 

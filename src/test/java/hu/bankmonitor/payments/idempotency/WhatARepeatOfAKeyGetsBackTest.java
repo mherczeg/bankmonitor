@@ -11,12 +11,15 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -65,6 +68,9 @@ class WhatARepeatOfAKeyGetsBackTest extends BootedApplicationTest {
 	private DataSource dataSource;
 
 	private final AtomicInteger runs = new AtomicInteger();
+
+	/** Phase two, counted separately: a duplicate must not pay for it either. */
+	private final AtomicInteger resolutions = new AtomicInteger();
 
 	@BeforeEach
 	@AfterEach
@@ -123,10 +129,11 @@ class WhatARepeatOfAKeyGetsBackTest extends BootedApplicationTest {
 		claimedKey(status, PAYLOAD_HASH, "SUCCEEDED".equals(status) ? STORED_ANSWER : null);
 
 		assertThatThrownBy(() -> requests.executeOnce(KEY, A_DIFFERENT_PAYLOAD_HASH,
-				Answer.class, answering(ANSWER)))
+				Answer.class, nothingToResolve(), resolved -> answering(ANSWER).get()))
 				.isInstanceOf(IdempotencyKeyReusedException.class);
 
 		assertThat(runs).hasValue(0);
+		assertThat(resolutions).hasValue(0);
 		assertThat(storedStatus()).isEqualTo(status);
 	}
 
@@ -168,6 +175,70 @@ class WhatARepeatOfAKeyGetsBackTest extends BootedApplicationTest {
 	}
 
 	/**
+	 * Design decision 4's phase two, and the placement that is its entire point: it runs
+	 * with the key already claimed and with no transaction open, where the operation runs
+	 * inside one.
+	 *
+	 * <p>Both halves matter and only together. That the resolution ran <em>after</em> the
+	 * claim is what stops a duplicate paying for it; that it ran <em>outside</em> the
+	 * transaction is what keeps a slow Exchange Rate provider from being something the
+	 * Account row locks wait on. Moving the call one line down, inside the transaction
+	 * template, would leave every other test in this class green.
+	 */
+	@Test
+	@DisplayName("phase two runs under the claim and outside the transaction the operation runs in")
+	void resolvesWithTheKeyClaimedAndNoTransactionOpen() {
+		AtomicBoolean transactionWhileResolving = new AtomicBoolean(true);
+		AtomicBoolean transactionWhileOperating = new AtomicBoolean(false);
+		AtomicReference<String> claimWhileResolving = new AtomicReference<>();
+
+		Answer answered = requests.executeOnce(KEY, PAYLOAD_HASH, Answer.class,
+				() -> {
+					transactionWhileResolving.set(TransactionSynchronizationManager.isActualTransactionActive());
+					claimWhileResolving.set(storedStatus());
+					return "the resolved value";
+				},
+				resolved -> {
+					transactionWhileOperating.set(TransactionSynchronizationManager.isActualTransactionActive());
+					assertThat(resolved).as("what phase two produced reaches phase three")
+							.isEqualTo("the resolved value");
+					return ANSWER;
+				});
+
+		assertThat(answered).isEqualTo(ANSWER);
+		assertThat(transactionWhileResolving).as("nothing slow may run inside the transaction").isFalse();
+		assertThat(transactionWhileOperating).as("the operation and the claim commit together").isTrue();
+		assertThat(claimWhileResolving).as("the claim is committed before phase two runs")
+				.hasValue("IN_PROGRESS");
+	}
+
+	/**
+	 * The failure ticket 26 exists to handle: the Exchange Rate provider gave up, so nothing
+	 * was priced and nothing may be reserved. Failing to the caller is not giving up on the
+	 * key — the claim is released, so the same key resubmitted executes rather than replaying
+	 * a failure.
+	 */
+	@Test
+	@DisplayName("a phase two that throws releases the key without ever reaching the operation")
+	void aResolutionThatThrowsReleasesTheKeyAndRunsNothing() {
+		assertThatThrownBy(() -> executeOnce(
+				() -> {
+					resolutions.incrementAndGet();
+					throw new IllegalStateException("the provider did not answer");
+				},
+				answering(ANSWER)))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("the provider did not answer");
+
+		assertThat(resolutions).hasValue(1);
+		assertThat(runs).as("nothing may be reserved at a rate nobody quoted").hasValue(0);
+		assertThat(storedStatus()).isEqualTo("FAILED");
+
+		assertThat(executeOnce(answering(ANSWER))).isEqualTo(ANSWER);
+		assertThat(storedStatus()).isEqualTo("SUCCEEDED");
+	}
+
+	/**
 	 * The claim is committed before the operation runs, which is the property the whole
 	 * mechanism rests on and the one a sequential test normally cannot see. Here the repeat
 	 * arrives from inside the operation itself, so it is demonstrably reading a claim whose
@@ -182,7 +253,8 @@ class WhatARepeatOfAKeyGetsBackTest extends BootedApplicationTest {
 	void aRepeatArrivingDuringTheOperationSeesTheClaim() {
 		assertThatThrownBy(() -> executeOnce(() -> {
 			runs.incrementAndGet();
-			return requests.executeOnce(KEY, PAYLOAD_HASH, Answer.class, answering(ANSWER));
+			return requests.executeOnce(KEY, PAYLOAD_HASH, Answer.class,
+					nothingToResolve(), resolved -> answering(ANSWER).get());
 		})).isInstanceOf(RequestInProgressException.class);
 
 		assertThat(runs).hasValue(1);
@@ -214,7 +286,23 @@ class WhatARepeatOfAKeyGetsBackTest extends BootedApplicationTest {
 	}
 
 	private @Nullable Answer executeOnce(Supplier<Answer> operation) {
-		return requests.executeOnce(KEY, PAYLOAD_HASH, Answer.class, operation);
+		return executeOnce(nothingToResolve(), operation);
+	}
+
+	private @Nullable Answer executeOnce(Supplier<String> resolution, Supplier<Answer> operation) {
+		return requests.executeOnce(KEY, PAYLOAD_HASH, Answer.class, resolution, resolved -> operation.get());
+	}
+
+	/**
+	 * Phase two for the tests that are not about it. It still counts its runs, so that every
+	 * "the operation never ran" assertion above is also a claim that no Exchange Rate would
+	 * have been fetched for that repeat.
+	 */
+	private Supplier<String> nothingToResolve() {
+		return () -> {
+			resolutions.incrementAndGet();
+			return "nothing to resolve";
+		};
 	}
 
 	private Supplier<Answer> answering(Answer answer) {

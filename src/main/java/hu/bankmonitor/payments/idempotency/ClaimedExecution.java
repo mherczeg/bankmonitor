@@ -7,6 +7,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -21,14 +22,16 @@ import java.util.function.Supplier;
  * discovers a duplicate;
  * <li>if it was refused, read the claim that beat this one and answer from it, without
  * ever reaching the operation;
- * <li>otherwise run the operation and close the claim, in one transaction that commits
- * both or neither.
+ * <li>otherwise resolve whatever the operation needs and cannot hold a lock across — design
+ * decision 4's phase two, with no transaction open;
+ * <li>then run the operation and close the claim, in one transaction that commits both or
+ * neither.
  * </ol>
  *
- * <p>Phase two of design decision 4 — resolving anything slow with no locks held — has no
- * slot here, because there is nothing to resolve until ticket 26 fetches an Exchange Rate.
- * It is not a hole in the ordering: duplicate resolution already happens above everything,
- * so a duplicate never reaches whatever ends up between the claim and the transaction.
+ * <p>Duplicate resolution sits above phase two rather than beside it, so a repeat of a key
+ * is answered without an Exchange Rate ever being fetched for it. That is what ticket 17
+ * meant by the ordering being satisfied by construction: whatever ends up between the claim
+ * and the transaction, a duplicate does not reach it.
  *
  * <p>Package-private, like everything else in this slice. What another slice may hold is
  * the port.
@@ -64,8 +67,8 @@ class ClaimedExecution implements IdempotentExecution {
 	}
 
 	@Override
-	public <T> T executeOnce(String idempotencyKey, String payloadHash, Class<T> responseType,
-			Supplier<T> operation) {
+	public <R, T> T executeOnce(String idempotencyKey, String payloadHash, Class<T> responseType,
+			Supplier<R> resolution, Function<R, T> operation) {
 		try {
 			claims.claim(idempotencyKey, payloadHash);
 		}
@@ -76,7 +79,7 @@ class ClaimedExecution implements IdempotentExecution {
 				return alreadyAnswered.get();
 			}
 		}
-		return runUnderTheClaim(idempotencyKey, operation);
+		return runUnderTheClaim(idempotencyKey, resolution, operation);
 	}
 
 	/**
@@ -127,8 +130,20 @@ class ClaimedExecution implements IdempotentExecution {
 	}
 
 	/**
-	 * Phase three: the operation and the flip to {@code SUCCEEDED} in one transaction, and
-	 * the release of the claim strictly outside it.
+	 * Phases two and three: the resolution outside the transaction, then the operation and
+	 * the flip to {@code SUCCEEDED} inside one, and the release of the claim strictly outside
+	 * it again.
+	 *
+	 * <p><b>The resolution is called before {@code transaction.execute}, not inside the
+	 * lambda</b>, and that placement is the whole of phase two. A call moved one line down
+	 * would compile, pass every test that asserts what it returns, and put a third party's
+	 * server inside the transaction that holds the Account row locks — the arrangement
+	 * design decision 6 calls the classic objection to pessimistic locking, and which it
+	 * claims to have removed.
+	 *
+	 * <p>It is inside the {@code try}, so a resolution that fails releases the claim like any
+	 * other failure. That is what lets a client resubmit the same Idempotency Key after the
+	 * Exchange Rate provider was down, and have it execute rather than replay the failure.
 	 *
 	 * <p>The {@code catch} sits outside the template deliberately. Releasing a claim commits
 	 * on its own so that it survives the rollback it reports, and a new transaction cannot
@@ -143,10 +158,12 @@ class ClaimedExecution implements IdempotentExecution {
 	 * nothing sweeps stranded keys: a retry of a recoverable failure is the whole promise
 	 * this slice makes, and it must not depend on which unchecked throwable arrived.
 	 */
-	private <T> T runUnderTheClaim(String idempotencyKey, Supplier<T> operation) {
+	private <R, T> T runUnderTheClaim(String idempotencyKey, Supplier<R> resolution,
+			Function<R, T> operation) {
 		try {
+			R resolved = resolution.get();
 			return transaction.execute(status -> {
-				T answer = operation.get();
+				T answer = operation.apply(resolved);
 				claims.markSucceeded(idempotencyKey, json.writeValueAsString(answer));
 				return answer;
 			});

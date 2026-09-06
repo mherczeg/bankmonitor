@@ -137,5 +137,10 @@ class AccountsLockInAscendingIdOrderTest {
 		public List<Account> saveAll(Iterable<Account> accounts) {
 			throw new UnsupportedOperationException("the locked path does not seed accounts");
 		}
+
+		@Override
+		public Optional<Currency> findCurrencyById(long accountId) {
+			throw new UnsupportedOperationException("the locked path reads its Currencies off the locked rows");
+		}
 	}
 }

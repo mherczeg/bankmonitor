@@ -211,6 +211,6 @@ class RecordedVerdictsAdvanceTheTransferTest extends TransferScenario {
 	}
 
 	private long reserve() {
-		return reservation.reserve(transferOf(AMOUNT, SOURCE, DESTINATION)).getId();
+		return reserve(transferOf(AMOUNT, SOURCE, DESTINATION)).getId();
 	}
 }

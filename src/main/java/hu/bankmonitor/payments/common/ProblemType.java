@@ -46,11 +46,10 @@ public enum ProblemType {
 	INSUFFICIENT_FUNDS("insufficient-funds"),
 
 	/**
-	 * The two Accounts are denominated differently, which this service cannot convert
-	 * between yet. Names a capability rather than a rule, because ticket 26 deletes it
-	 * rather than reinterpreting it.
+	 * The amount converts to zero Minor Units of the destination Currency, so the Transfer
+	 * would debit the source and credit nothing. Carries both sides and the rate.
 	 */
-	CROSS_CURRENCY_UNSUPPORTED("cross-currency-unsupported"),
+	CONVERSION_ROUNDS_TO_ZERO("conversion-rounds-to-zero"),
 
 	/**
 	 * A Verdict named a Check the Transfer's Ledger has no row for. Carries both halves,
@@ -70,7 +69,10 @@ public enum ProblemType {
 	/** The same idempotency key was used for a different payload. Retrying can never succeed. */
 	IDEMPOTENCY_KEY_REUSED("idempotency-key-reused"),
 
-	/** The exchange rate provider failed every attempt. Retryable, and says when. */
+	/**
+	 * The exchange rate provider failed every attempt, so the Transfer could not be priced.
+	 * Retryable, and says when — and the one problem here that is not the caller's fault.
+	 */
 	FX_PROVIDER_UNAVAILABLE("fx-provider-unavailable"),
 
 	/**

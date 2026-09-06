@@ -284,15 +284,23 @@ that would make it false.
 
 ## Re-quoting the exchange rate at settlement
 
-**Deferred.** The rate is locked when the transfer is requested.
+**Deferred.** The rate is locked when the transfer is requested. As of ticket 26
+this is shipped rather than planned: the rate and the moment it was fetched are
+columns on the transfer, written at request time and never written again.
 
 **Why deferred:** this is a business decision about who carries FX movement
 risk between authorization and settlement, not a technical one. Staleness is
-bounded already, because the quote's validity window and the check deadline are
-the same clock.
+bounded already, by the check deadline — a transfer that sits pending long
+enough for its rate to matter expires and releases its funds. (The bound is the
+deadline alone. Ticket 25 found that the provider quotes a pair and a number and
+nothing else, so there is no validity window on a quote to be the other half of
+it.)
 
 **What it would take:** a re-quote at settlement with a tolerance band, and a
-policy for what happens when the new rate falls outside it.
+policy for what happens when the new rate falls outside it. Nothing technical
+blocks it — the settling code would need the provider, which today it
+deliberately cannot reach, so the re-quote would have to happen in a phase above
+the lock exactly as the request-time one does.
 
 ---
 

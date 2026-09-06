@@ -6,7 +6,9 @@ import hu.bankmonitor.testsupport.BootedApplicationTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.servlet.client.RestTestClient;
 
 import java.time.Instant;
 import java.util.List;
@@ -35,6 +37,9 @@ import java.util.Map;
 abstract class TransferScenario extends BootedApplicationTest {
 
 	static final Instant REQUESTED_AT = Instant.parse("2026-09-05T10:15:30Z");
+
+	@Autowired
+	TransferQuotes quotes;
 
 	@Autowired
 	FundsReservation reservation;
@@ -86,6 +91,44 @@ abstract class TransferScenario extends BootedApplicationTest {
 	 */
 	static ReservationRequest transferOf(long amountMinorUnits, long fromAccountId, long toAccountId) {
 		return new ReservationRequest(fromAccountId, toAccountId, amountMinorUnits, REQUESTED_AT);
+	}
+
+	/**
+	 * Both phases of a request, in the order design decision 4 puts them: resolve what the
+	 * Transfer comes to on each side, then reserve it.
+	 *
+	 * <p>The real {@link TransferQuotes} rather than a hand-built {@link ConvertedAmounts},
+	 * so that a scenario written against two Accounts in one Currency is proved to make no
+	 * provider call — nothing in these tests serves one, and a phase two that reached for a
+	 * rate it does not need would fail here rather than pass with a stub.
+	 *
+	 * <p>What it does <em>not</em> reproduce is the transaction {@code IdempotentExecution}
+	 * opens around the second phase. Every scenario below is about what one reservation
+	 * writes, and {@code reserve} opens its own; the tests that need the two phases inside
+	 * the port are the ones that go over HTTP.
+	 */
+	Transfer reserve(ReservationRequest request) {
+		return reservation.reserve(request, quotes.convert(request));
+	}
+
+	/**
+	 * One request to the endpoint, which is the other way into a reservation: {@link #reserve}
+	 * drives the two phases directly, this one goes through the port that claims the
+	 * Idempotency Key and opens the transaction around them.
+	 *
+	 * <p>Named {@code from} and {@code to} after {@link #transferOf}'s reasoning — three
+	 * adjacent {@code long}s are swappable in silence, and the parameter names are what make a
+	 * swapped call read wrong.
+	 */
+	RestTestClient.ResponseSpec requestTransfer(
+			String idempotencyKey, long fromAccountId, long toAccountId, long amountMinorUnits) {
+		return client().post().uri("/api/transfers")
+				.header("X-Idempotency-Key", idempotencyKey)
+				.contentType(MediaType.APPLICATION_JSON)
+				.body("""
+						{"fromAccountId": %d, "toAccountId": %d, "amountMinorUnits": %d}"""
+						.formatted(fromAccountId, toAccountId, amountMinorUnits))
+				.exchange();
 	}
 
 	long balanceOf(long accountId) {

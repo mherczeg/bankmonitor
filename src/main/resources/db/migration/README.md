@@ -60,6 +60,11 @@ column `required_check`, and the entity's field is named to produce that rather
 than quoted into submission. A quoted identifier survives here and then has to be
 repeated, quoted, in every hand-written query that touches it.
 
+**One `add column` per `alter table`.** H2 does not accept the comma-separated list of
+clauses Postgres does, so `add column a …, add column b …` is a syntax error that fails the
+whole migration — pointing, unhelpfully, at the comma. `V6__transfer_exchange_rate.sql` adds
+its two columns in two statements for this reason.
+
 **Never write `in (…)` in a `check` constraint.** H2 compiles a constant `in` list into a
 set ordered by *the session that parsed the DDL*, and evaluating the constraint later asks
 that session for its comparison mode. Flyway's connection is closed by then, so every

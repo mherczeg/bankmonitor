@@ -38,7 +38,7 @@ class ReservedFundsReachTheTableTest extends TransferScenario {
 	@Test
 	@DisplayName("reserving raises the source Account's Reserved Amount and moves no money")
 	void raisesTheReservedAmountAndMovesNoMoney() {
-		Transfer requested = reservation.reserve(transferOf(80_00L, SOURCE, DESTINATION));
+		Transfer requested = reserve(transferOf(80_00L, SOURCE, DESTINATION));
 
 		assertThat(requested.getId()).isNotNull();
 		assertThat(requested.getStatus()).isEqualTo(TransferStatus.PENDING);
@@ -59,7 +59,7 @@ class ReservedFundsReachTheTableTest extends TransferScenario {
 	@Test
 	@DisplayName("the PENDING Transfer records both amounts in the Accounts' Currency")
 	void recordsThePendingTransferInTheAccountsCurrency() {
-		reservation.reserve(transferOf(80_00L, SOURCE, DESTINATION));
+		reserve(transferOf(80_00L, SOURCE, DESTINATION));
 
 		assertThat(transferRows()).singleElement().satisfies(row -> assertThat(row)
 				.containsEntry("STATUS", "PENDING")
@@ -80,8 +80,8 @@ class ReservedFundsReachTheTableTest extends TransferScenario {
 	@Test
 	@DisplayName("a second reservation stacks on what the first one committed")
 	void stacksASecondReservationOnTheCommittedFirst() {
-		reservation.reserve(transferOf(80_00L, SOURCE, DESTINATION));
-		reservation.reserve(transferOf(30_00L, SOURCE, DESTINATION));
+		reserve(transferOf(80_00L, SOURCE, DESTINATION));
+		reserve(transferOf(30_00L, SOURCE, DESTINATION));
 
 		assertThat(reservedAmountOf(SOURCE)).isEqualTo(110_00L);
 		assertThat(transferRows()).hasSize(2);
@@ -90,7 +90,7 @@ class ReservedFundsReachTheTableTest extends TransferScenario {
 	@Test
 	@DisplayName("a Transfer beyond the Available Balance is refused and nothing is written")
 	void refusesATransferBeyondTheAvailableBalanceAndWritesNothing() {
-		assertThatThrownBy(() -> reservation.reserve(transferOf(OPENING_BALANCE + 1, SOURCE, DESTINATION)))
+		assertThatThrownBy(() -> reserve(transferOf(OPENING_BALANCE + 1, SOURCE, DESTINATION)))
 				.asInstanceOf(type(InsufficientFundsException.class))
 				.satisfies(refused ->
 						assertThat(refused.getAvailableBalance().minorUnits()).isEqualTo(OPENING_BALANCE));
@@ -106,9 +106,9 @@ class ReservedFundsReachTheTableTest extends TransferScenario {
 	@Test
 	@DisplayName("a Transfer is refused against what an earlier one already reserved")
 	void refusesATransferAgainstWhatIsAlreadyReserved() {
-		reservation.reserve(transferOf(200_00L, SOURCE, DESTINATION));
+		reserve(transferOf(200_00L, SOURCE, DESTINATION));
 
-		assertThatThrownBy(() -> reservation.reserve(transferOf(50_01L, SOURCE, DESTINATION)))
+		assertThatThrownBy(() -> reserve(transferOf(50_01L, SOURCE, DESTINATION)))
 				.isInstanceOf(InsufficientFundsException.class);
 
 		assertThat(reservedAmountOf(SOURCE)).isEqualTo(200_00L);
@@ -120,7 +120,7 @@ class ReservedFundsReachTheTableTest extends TransferScenario {
 	void refusesATransferAgainstAnAccountThatDoesNotExist() {
 		long missing = 404L;
 
-		assertThatThrownBy(() -> reservation.reserve(transferOf(10_00L, SOURCE, missing)))
+		assertThatThrownBy(() -> reserve(transferOf(10_00L, SOURCE, missing)))
 				.asInstanceOf(type(UnknownAccountException.class))
 				.satisfies(refused -> assertThat(refused.getAccountId()).isEqualTo(missing));
 

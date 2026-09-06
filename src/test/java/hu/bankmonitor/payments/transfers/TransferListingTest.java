@@ -19,9 +19,11 @@ import java.lang.reflect.RecordComponent;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import static hu.bankmonitor.testsupport.TransferRows.DESTINATION_ACCOUNT;
 import static hu.bankmonitor.testsupport.TransferRows.SOURCE_ACCOUNT;
+import static java.util.function.Predicate.not;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -55,6 +57,13 @@ class TransferListingTest extends BootedApplicationTest {
 	private static final Instant LATER = Instant.parse("2026-09-06T10:00:00Z");
 
 	private static final Instant LATEST = Instant.parse("2026-09-06T11:00:00Z");
+
+	/**
+	 * The two members a cross-Currency Transfer has and a same-Currency one does not, which the
+	 * schema leaves optional for that reason and for no other.
+	 */
+	private static final List<String> THE_RATE_AND_ITS_TIMESTAMP =
+			List.of("exchangeRate", "exchangeRateFetchedAt");
 
 	@Autowired
 	private JdbcTemplate jdbc;
@@ -204,10 +213,11 @@ class TransferListingTest extends BootedApplicationTest {
 
 	/**
 	 * Each amount is a whole count of Minor Units and carries the Currency it is counted
-	 * in. The row is denominated differently on its two sides, which is a Transfer ticket 26
-	 * produces and this service cannot yet request — the table permits it, as
-	 * {@link TransferRoundTripsInEveryStatusTest} also relies on — and it is the only kind
-	 * of row on which a shape that had collapsed the two Currencies into one would be caught.
+	 * in. The row is denominated differently on its two sides, which is the cross-Currency
+	 * Transfer ticket 26 made requestable, and it is the only kind of row on which a shape
+	 * that had collapsed the two Currencies into one would be caught. What the rate between
+	 * them looks like coming back out is {@link OneTransferByIdTest}'s claim, which asserts
+	 * this response shape member for member.
 	 *
 	 * <p>HUF on the credited side for a second reason: its Minor Units are not hundredths,
 	 * so a figure that had picked up a division by a hundred between the column and the wire
@@ -239,9 +249,9 @@ class TransferListingTest extends BootedApplicationTest {
 	 * about there being no ledger to leave out.
 	 *
 	 * <p>Asserted as an absent member rather than an empty one, because that is what the
-	 * document promises: {@code checks} is the one member of {@link TransferResponse} not
-	 * listed as required, and an empty array here would be this endpoint claiming the Transfer
-	 * requires no Checks — which no Transfer does.
+	 * document promises: {@code checks} is not listed as required, and an empty array here
+	 * would be this endpoint claiming the Transfer requires no Checks — which no Transfer
+	 * does.
 	 */
 	@Test
 	@DisplayName("the listing carries no Check Ledger, which belongs to the single-Transfer response")
@@ -265,19 +275,29 @@ class TransferListingTest extends BootedApplicationTest {
 	 * {@link TransferResponse} says so itself, and the list is compared against the record's
 	 * own components so the two cannot drift apart.
 	 *
-	 * <p><b>{@code checks} is the one component held out of that comparison</b>, and it is the
-	 * cost ticket 22 chose knowingly: one Transfer type across both read endpoints, at the
+	 * <p><b>Three components are held out of the required list</b>, each named by a constant
+	 * rather than trimmed out of the expectation, which is what keeps the exceptions decisions:
+	 * a fourth optional member added without a second thought fails this test. {@code checks} is
+	 * the cost ticket 22 chose knowingly — one Transfer type across both read endpoints, at the
 	 * price of a member the generated type says may be missing on the screen that exists to
-	 * render it. Naming it here rather than trimming the expectation is what keeps the
-	 * exception a decision — a second optional member added without a second thought fails this
-	 * test.
+	 * render it — and the rate and its timestamp are the two a same-Currency Transfer does not
+	 * have.
+	 *
+	 * <p>Both halves are asserted, because each catches a different mistake. That every member
+	 * is <em>declared</em> stops ticket 32's generated client losing one altogether; that three
+	 * are <em>not required</em> stops it promising a ledger the listing never sends and a rate
+	 * the same-Currency Transfers never have. A single assertion over the required list would
+	 * pass a schema that had dropped them entirely.
 	 */
 	@Test
 	@DisplayName("the OpenAPI document describes both read endpoints and the response shape")
 	void describesBothReadEndpointsInTheOpenApiDocument() {
-		List<String> everyRequiredComponent = Arrays.stream(TransferResponse.class.getRecordComponents())
+		List<String> everyComponent = Arrays.stream(TransferResponse.class.getRecordComponents())
 				.map(RecordComponent::getName)
-				.filter(component -> !component.equals(SENT_BY_THE_SINGLE_TRANSFER_RESPONSE_ALONE))
+				.toList();
+		List<String> everyRequiredComponent = everyComponent.stream()
+				.filter(not(SENT_BY_THE_SINGLE_TRANSFER_RESPONSE_ALONE::equals))
+				.filter(not(THE_RATE_AND_ITS_TIMESTAMP::contains))
 				.toList();
 
 		client().get().uri(OPENAPI_DOCUMENT)
@@ -289,6 +309,9 @@ class TransferListingTest extends BootedApplicationTest {
 				.jsonPath("$.components.schemas.TransferResponse.properties.status.enum")
 				.value((List<String> statuses) -> assertThat(statuses)
 						.containsExactlyInAnyOrder("PENDING", "SETTLED", "REJECTED", "EXPIRED"))
+				.jsonPath("$.components.schemas.TransferResponse.properties")
+				.value((Map<String, Object> properties) -> assertThat(properties)
+						.containsOnlyKeys(everyComponent.toArray(String[]::new)))
 				.jsonPath("$.components.schemas.TransferResponse.required")
 				.value((List<String> required) ->
 						assertThat(required).containsExactlyInAnyOrderElementsOf(everyRequiredComponent));

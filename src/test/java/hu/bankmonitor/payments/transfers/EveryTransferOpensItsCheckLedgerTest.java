@@ -52,7 +52,7 @@ class EveryTransferOpensItsCheckLedgerTest extends TransferScenario {
 	@Test
 	@DisplayName("requesting a Transfer opens one outstanding row per required Check")
 	void opensOneOutstandingRowPerRequiredCheck() {
-		Transfer requested = reservation.reserve(transferOf(80_00L, SOURCE, DESTINATION));
+		Transfer requested = reserve(transferOf(80_00L, SOURCE, DESTINATION));
 
 		assertThat(checkLedgerRows())
 				.allSatisfy(row -> {
@@ -70,8 +70,8 @@ class EveryTransferOpensItsCheckLedgerTest extends TransferScenario {
 	@Test
 	@DisplayName("a second Transfer gets a ledger of its own")
 	void opensASeparateLedgerForEachTransfer() {
-		Transfer first = reservation.reserve(transferOf(80_00L, SOURCE, DESTINATION));
-		Transfer second = reservation.reserve(transferOf(30_00L, SOURCE, DESTINATION));
+		Transfer first = reserve(transferOf(80_00L, SOURCE, DESTINATION));
+		Transfer second = reserve(transferOf(30_00L, SOURCE, DESTINATION));
 
 		assertThat(checkLedgerRows())
 				.hasSize(4)
@@ -82,7 +82,7 @@ class EveryTransferOpensItsCheckLedgerTest extends TransferScenario {
 	@Test
 	@DisplayName("a refused Transfer leaves no ledger behind either")
 	void writesNoLedgerWhenTheTransferIsRefused() {
-		assertThatThrownBy(() -> reservation.reserve(transferOf(OPENING_BALANCE + 1, SOURCE, DESTINATION)))
+		assertThatThrownBy(() -> reserve(transferOf(OPENING_BALANCE + 1, SOURCE, DESTINATION)))
 				.isInstanceOf(InsufficientFundsException.class);
 
 		assertThat(transferRows()).isEmpty();
@@ -98,8 +98,8 @@ class EveryTransferOpensItsCheckLedgerTest extends TransferScenario {
 	@Test
 	@DisplayName("a ledger cannot be opened outside a transaction")
 	void refusesToOpenALedgerWithNoTransaction() {
-		Money euro = new Money(10_00L, EUR);
-		Transfer unwritten = new Transfer(SOURCE, DESTINATION, euro, euro, REQUESTED_AT);
+		Transfer unwritten = new Transfer(SOURCE, DESTINATION,
+				ConvertedAmounts.unconverted(new Money(10_00L, EUR)), REQUESTED_AT);
 
 		assertThatThrownBy(() -> ledger.openFor(unwritten))
 				.isInstanceOf(IllegalTransactionStateException.class);
@@ -122,7 +122,7 @@ class EveryTransferOpensItsCheckLedgerTest extends TransferScenario {
 	@Test
 	@DisplayName("the table refuses a Verdict that is not one of the two")
 	void refusesAVerdictTheDomainDoesNotHave() {
-		reservation.reserve(transferOf(80_00L, SOURCE, DESTINATION));
+		reserve(transferOf(80_00L, SOURCE, DESTINATION));
 
 		assertThatThrownBy(() -> database.update("UPDATE check_ledger SET verdict = 'MAYBE'"))
 				.isInstanceOf(DataIntegrityViolationException.class);
@@ -137,7 +137,7 @@ class EveryTransferOpensItsCheckLedgerTest extends TransferScenario {
 	@Test
 	@DisplayName("a Transfer cannot collect a second row for the same Check")
 	void refusesASecondRowForACheckTheTransferAlreadyHas() {
-		Transfer requested = reservation.reserve(transferOf(80_00L, SOURCE, DESTINATION));
+		Transfer requested = reserve(transferOf(80_00L, SOURCE, DESTINATION));
 
 		assertThatThrownBy(() -> database.update("""
 				INSERT INTO check_ledger (transfer_id, required_check, verdict)

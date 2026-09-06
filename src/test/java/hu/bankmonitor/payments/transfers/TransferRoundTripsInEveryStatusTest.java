@@ -8,11 +8,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.test.context.TestPropertySource;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
@@ -39,6 +41,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TransferRoundTripsInEveryStatusTest {
 
 	private static final Instant REQUESTED_AT = Instant.parse("2026-09-05T10:15:30Z");
+
+	/** Six decimal places, which is the scale this application's stand-in provider quotes at. */
+	private static final BigDecimal QUOTED_RATE = new BigDecimal("390.000000");
+
+	private static final Instant RATE_FETCHED_AT = Instant.parse("2026-09-05T10:15:29Z");
 
 	@Autowired
 	private TestEntityManager entityManager;
@@ -155,9 +162,72 @@ class TransferRoundTripsInEveryStatusTest {
 				.hasStackTraceContaining("TRANSFERS_DESTINATION_ACCOUNT");
 	}
 
+	/**
+	 * The Exchange Rate reaches columns of its own and comes back the same number, read in
+	 * SQL for the reason the two amounts are: a round trip through the mapping would agree
+	 * with itself whatever scale it chose.
+	 *
+	 * <p>Compared by value rather than by equality, because the column's scale is ten and
+	 * the provider quotes six — {@code 390.000000} and {@code 390.0000000000} are the same
+	 * rate and are not the same {@link BigDecimal}.
+	 */
+	@Test
+	@DisplayName("the Exchange Rate and the moment it was fetched round-trip with the Transfer")
+	void keepsTheExchangeRateAndTheMomentItWasFetched() {
+		Long id = writtenTransfers.save(pendingTransfer()).getId();
+		entityManager.flush();
+		entityManager.clear();
+
+		Transfer reopened = storedTransfers.findById(id).orElseThrow();
+
+		assertThat(reopened.getExchangeRate()).isEqualByComparingTo(QUOTED_RATE);
+		assertThat(reopened.getExchangeRateFetchedAt()).isEqualTo(RATE_FETCHED_AT);
+
+		Object[] stored = (Object[]) entityManager.getEntityManager()
+				.createNativeQuery("SELECT exchange_rate, exchange_rate_fetched_at FROM transfers")
+				.getSingleResult();
+		assertThat((BigDecimal) stored[0]).isEqualByComparingTo(QUOTED_RATE);
+	}
+
+	/**
+	 * The three ways the rate, its timestamp and the two Currencies can disagree, each
+	 * refused by the constraint rather than only by the entity that writes them. Written as
+	 * refusals rather than as one accepted good row, on the migration README's rule: a
+	 * {@code check} that has quietly stopped evaluating still lets every good row in.
+	 */
+	@Test
+	@DisplayName("the table refuses a cross-Currency Transfer that names no Exchange Rate")
+	void refusesACrossCurrencyTransferWithNoRate() {
+		assertThatThrownBy(() -> insertTransferQuotedAt(
+				sourceAccountId, destinationAccountId, 120_00L, "PENDING", "HUF", null, null))
+				.hasStackTraceContaining("TRANSFERS_RATE_IFF_CROSS_CURRENCY");
+	}
+
+	@Test
+	@DisplayName("the table refuses a same-Currency Transfer carrying an Exchange Rate")
+	void refusesASameCurrencyTransferCarryingARate() {
+		assertThatThrownBy(() -> insertTransferQuotedAt(
+				sourceAccountId, destinationAccountId, 120_00L, "PENDING", "EUR", QUOTED_RATE, RATE_FETCHED_AT))
+				.hasStackTraceContaining("TRANSFERS_RATE_IFF_CROSS_CURRENCY");
+	}
+
+	@Test
+	@DisplayName("the table refuses an Exchange Rate that does not say when it was fetched")
+	void refusesARateWithNoFetchTimestamp() {
+		assertThatThrownBy(() -> insertTransferQuotedAt(
+				sourceAccountId, destinationAccountId, 120_00L, "PENDING", "HUF", QUOTED_RATE, null))
+				.hasStackTraceContaining("TRANSFERS_RATE_IFF_CROSS_CURRENCY");
+	}
+
+	/**
+	 * Denominated differently on its two sides, so it carries an Exchange Rate — and so the
+	 * round trip covers the four columns ticket 26 added as well as the ones before them.
+	 */
 	private Transfer pendingTransfer() {
 		return new Transfer(sourceAccountId, destinationAccountId,
-				new Money(120_00L, Currency.EUR), new Money(46_800L, Currency.HUF), REQUESTED_AT);
+				new ConvertedAmounts(new Money(120_00L, Currency.EUR), new Money(46_800L, Currency.HUF),
+						QUOTED_RATE, RATE_FETCHED_AT),
+				REQUESTED_AT);
 	}
 
 	private Long openAccount(Money openingBalance) {
@@ -172,20 +242,34 @@ class TransferRoundTripsInEveryStatusTest {
 				.executeUpdate();
 	}
 
+	/**
+	 * A row that breaks exactly one rule at a time. The two Currencies differ, so it carries
+	 * an Exchange Rate — without one the rate constraint would fire alongside whichever rule
+	 * a test meant to break, and each assertion below names the constraint it expects.
+	 */
 	private void insertTransfer(Long sourceId, Long destinationId, long minorUnits, String status) {
+		insertTransferQuotedAt(sourceId, destinationId, minorUnits, status, "HUF", QUOTED_RATE, RATE_FETCHED_AT);
+	}
+
+	private void insertTransferQuotedAt(Long sourceId, Long destinationId, long minorUnits, String status,
+			String creditedCurrency, @Nullable BigDecimal exchangeRate, @Nullable Instant fetchedAt) {
 		entityManager.getEntityManager().createNativeQuery("""
 						INSERT INTO transfers (source_account_id, destination_account_id,
 						                       debited_amount_minor_units, debited_amount_currency,
 						                       credited_amount_minor_units, credited_amount_currency,
+						                       exchange_rate, exchange_rate_fetched_at,
 						                       status, created_at)
-						VALUES (?, ?, ?, 'EUR', ?, 'HUF', ?, ?)
+						VALUES (?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?)
 						""")
 				.setParameter(1, sourceId)
 				.setParameter(2, destinationId)
 				.setParameter(3, minorUnits)
 				.setParameter(4, minorUnits)
-				.setParameter(5, status)
-				.setParameter(6, REQUESTED_AT)
+				.setParameter(5, creditedCurrency)
+				.setParameter(6, exchangeRate)
+				.setParameter(7, fetchedAt)
+				.setParameter(8, status)
+				.setParameter(9, REQUESTED_AT)
 				.executeUpdate();
 	}
 }

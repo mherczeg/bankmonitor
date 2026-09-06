@@ -133,12 +133,66 @@ asynchronous lifecycle must not do. `?status=` narrows to one; `?status=` with n
 it is no filter rather than an error, so a form that always submits its fields still works.
 A status this domain has no name for is a `400` naming the four that exist.
 
-**Both Accounts have to be denominated in the same Currency.** A Transfer between two that
-are not is refused with `422` and a problem document naming both, until the ticket that
-fetches an Exchange Rate. Refused rather than written, because the amount to credit the
-destination with is the one figure this service cannot yet compute: a Transfer stored now
-would have to carry the source Account's Currency on both sides, which is a wrong number in
-the table rather than a missing one.
+**A Transfer between two Accounts in different Currencies is converted.** The Exchange Rate
+is fetched when the Transfer is requested and locked onto it for its life, so the figure an
+operator was shown is the figure it will settle at whatever the market does while its Checks
+are outstanding — and a settled conversion can be read back and audited:
+
+```console
+$ curl -s -X POST localhost:8080/api/transfers -H 'Content-Type: application/json' \
+    -H 'X-Idempotency-Key: 3fa85f64-5717-4562-b3fc-2c963f66afa6' \
+    -d '{"fromAccountId":1,"toAccountId":5,"amountMinorUnits":10050}'
+{"id":1,"fromAccountId":1,"toAccountId":5,"status":"PENDING",
+ "debitedAmountMinorUnits":10050,"debitedAmountCurrency":"EUR",
+ "creditedAmountMinorUnits":39698,"creditedAmountCurrency":"HUF",
+ "exchangeRate":395.000000,"exchangeRateFetchedAt":"2026-09-06T19:56:38.638668532Z",
+ "createdAt":"2026-09-06T19:56:38.320253112Z"}
+```
+
+€100.50 leaves account 1 and 39,698 Ft arrives at account 5 — two amounts, each in its own
+Account's Currency, and the rate that relates them. The two timestamps are both about the
+Transfer's beginning and they are in the order the request goes through: `createdAt` is
+stamped when the request arrives, and the quote comes back a few hundred milliseconds later.
+
+**`exchangeRate` and `exchangeRateFetchedAt` are absent together or not at all**, and what
+decides it is the Transfer rather than the endpoint that reported it — unlike `checks` below,
+which is the one member a `GET` of a single Transfer adds. A Transfer between two Accounts
+holding the same Currency asked no provider anything — a rate of `1` would claim a quote that
+was never fetched — so the same-Currency response above carries neither. That is also the point:
+**a same-Currency Transfer makes no call to the provider at all**, so an outage there cannot
+stop one.
+
+Two things can go wrong that belong to the conversion rather than to the Accounts:
+
+```console
+$ # one fillér into a euro Account: worth a quarter of a cent, so there is nothing to credit
+$ curl -si -X POST ... -d '{"fromAccountId":4,"toAccountId":2,"amountMinorUnits":1}'
+HTTP/1.1 422
+{"type":"urn:problem:conversion-rounds-to-zero","title":"Unprocessable Content","status":422,
+ "detail":"This amount converts to nothing in the destination Account's Currency.",
+ "instance":"/api/transfers","debitedAmountMinorUnits":1,"debitedAmountCurrency":"HUF",
+ "destinationCurrency":"EUR","exchangeRate":0.002532}
+
+$ # the provider did not answer, three attempts in
+$ curl -si -X POST ... -d '{"fromAccountId":1,"toAccountId":5,"amountMinorUnits":10050}'
+HTTP/1.1 503
+Retry-After: 5
+{"type":"urn:problem:fx-provider-unavailable","title":"Service Unavailable","status":503,
+ "detail":"The Exchange Rate provider did not answer, so this Transfer could not be priced.
+           Retry with the same Idempotency Key.",
+ "instance":"/api/transfers","baseCurrency":"EUR","quoteCurrency":"HUF","attempts":3}
+```
+
+The `422` refuses a Transfer that would debit the source and credit nothing; the remedy is a
+larger amount, and the document carries every figure the comparison used so an operator can
+work out how much larger.
+
+**The `503` is the only `5xx` this API raises on purpose**, and the status is the whole
+message: the request was fine, this service is fine, and a third party it depends on is not.
+The `Retry-After` says coming back is worth doing, and the attempt count says the failure was
+an outage rather than a blip — three attempts had already been spent inside that one request
+before it answered. Its Idempotency Key is left released, so resending the identical request
+under the same key executes it rather than replaying the failure.
 
 **Sending the same request twice moves money once.** That is what the Idempotency Key is
 for, and it is the whole of what a client has to do about retrying: resend the request, key
@@ -186,24 +240,28 @@ back, and the record stores a hash rather than the payload, so one caller's requ
 be read out through another caller's guess at its key.
 
 **A request that was refused releases its key.** Every refusal above — insufficient funds, an
-unknown Account, a cross-Currency pair — is a reservation-time failure, and all of them are
-retryable under the *same* key once their cause is gone. So an operator who funds the
-Account and resends the identical request gets the Transfer, rather than having to work out
-whether the first attempt took effect and mint a new key if it did not.
+unknown Account, an amount that converts to nothing, a provider that never answered — is a
+reservation-time failure, and all of them are retryable under the *same* key once their cause
+is gone. So an operator who funds the Account and resends the identical request gets the
+Transfer, rather than having to work out whether the first attempt took effect and mint a new
+key if it did not. **Failing to the caller is not giving up**: it is what makes "resend it
+with the same key" a complete retry policy rather than half of one.
 
 Underneath, requesting a Transfer is three phases: the key is claimed in its own committed
-transaction, where a unique constraint serialises concurrent duplicates; anything slow is
-resolved with no locks held; and then the reservation, the Transfer, its Check Ledger and
-the key's stored response are written in **one** transaction. Bundling that last write is
-deliberate — separate commits would let a crash strand reserved funds behind a key that
-answers `409` forever.
+transaction, where a unique constraint serialises concurrent duplicates; the Exchange Rate is
+fetched and the amounts converted with **no transaction open and no lock held**; and then the
+reservation, the Transfer, its Check Ledger and the key's stored response are written in
+**one** transaction. Both halves of that are deliberate. Bundling the last write is what stops
+a crash stranding reserved funds behind a key that answers `409` forever; keeping the provider
+call out of it is what makes locking two Account rows affordable, because a lock that waited on
+somebody else's server would hold up every other Transfer touching either Account.
 
 That is the whole business API so far; the rest of `/v3/api-docs` is still ahead of the
 build.
 
 ## What is built so far
 
-Tickets 01–17, 19–22, 24–25, 27 and 31–36 of 44: the skeleton, schema management, the package
+Tickets 01–17, 19–22, 24–27 and 31–36 of 44: the skeleton, schema management, the package
 structure the domain code will be written into, the security chain in front of it, the error
 contract every endpoint will answer with, the value type every amount in the system is
 expressed in and the single conversion between currencies, the first entity and the first
@@ -213,13 +271,14 @@ the endpoint a client posts a Transfer to and the two it is read back from, the 
 Idempotency Key and the duplicate resolution that turns that claim into an answer, the Check
 Ledger a Transfer has to clear before it settles, the one operation that answers a Check and
 moves the money, the guarded endpoint that operation is reached through, the response that
-tells an operator what a Transfer is still waiting on, the third-party
-Exchange Rate provider the resilience work is aimed at and the client that survives it, the
-table that keeps a committed change and the news of it from ever disagreeing, the frontend's
-shell, the generated API types that join the two halves, the frontend edge that turns Minor
-Units into decimals, the reading an operator gets of a failed request, the client half of the
-Idempotency Key, the stream message that is nothing but a cache invalidation, and the two
-ecosystem bets that had to be settled first. **Both bets won.**
+tells an operator what a Transfer is still waiting on, the third-party Exchange Rate provider
+the resilience work is aimed at and the client that survives it, the Transfer that crosses two
+Currencies and carries the rate it was quoted at, the table that keeps a committed change and
+the news of it from ever disagreeing, the frontend's shell, the generated API types that join
+the two halves, the frontend edge that turns Minor Units into decimals, the reading an
+operator gets of a failed request, the client half of the Idempotency Key, the stream message
+that is nothing but a cache invalidation, and the two ecosystem bets that had to be settled
+first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type

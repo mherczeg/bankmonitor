@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.IllegalTransactionStateException;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
@@ -71,6 +72,21 @@ class OneTransferByIdTest extends BootedApplicationTest {
 	 * lets ticket 32 generate a single Transfer type, and what makes the page a client lands on
 	 * after submitting the same page it refreshes an hour later. What this endpoint adds to it
 	 * is the {@code checks} member below, which the listing leaves out.
+	 *
+	 * <p>A settled cross-Currency Transfer, so that the rate is read back off a Transfer that
+	 * has already moved money: design decision 15 locks the rate on at request time precisely
+	 * so a settled conversion can be audited, and a rate that only survived while the Transfer
+	 * was {@code PENDING} would not be worth locking. {@code 120.00 EUR} at {@code 390} is
+	 * {@code 46 800 HUF} — the figure a reader can check by hand, and one that would not look
+	 * right if a division by a hundred had gone missing between the column and the wire.
+	 *
+	 * <p>The moment the rate was quoted is asserted against the Transfer's own timestamp rather
+	 * than against a literal, and it is the <em>later</em> of the two. That is what the
+	 * application produces and it is worth stating, because the intuitive reading — the quote
+	 * comes first, then the Transfer it prices — is wrong about which instant {@code createdAt}
+	 * holds. It is stamped when the request arrives, before the key is even claimed; the quote
+	 * comes back some way into phase two. Two timestamps about the beginning of one Transfer,
+	 * in the order the request actually goes through.
 	 */
 	@Test
 	@DisplayName("a Transfer is fetched by its identifier, in the shape the listing sends")
@@ -90,7 +106,36 @@ class OneTransferByIdTest extends BootedApplicationTest {
 				.jsonPath("$.debitedAmountCurrency").isEqualTo("EUR")
 				.jsonPath("$.creditedAmountMinorUnits").isEqualTo(46_800L)
 				.jsonPath("$.creditedAmountCurrency").isEqualTo("HUF")
+				.jsonPath("$.exchangeRate").value((Number rate) ->
+						assertThat(new BigDecimal(rate.toString())).isEqualByComparingTo("390"))
+				.jsonPath("$.exchangeRateFetchedAt").value((String quotedAt) ->
+						assertThat(Instant.parse(quotedAt)).isAfter(REQUESTED_AT))
 				.jsonPath("$.createdAt").isEqualTo(REQUESTED_AT.toString());
+	}
+
+	/**
+	 * The other half of the pair, and the reason neither member is required in the schema: a
+	 * Transfer between two Accounts in one Currency was never quoted, so there is no rate to
+	 * report. A {@code 1} here would describe a call to the provider that this application
+	 * deliberately never made.
+	 *
+	 * <p><b>Asserted against the raw body rather than with {@code jsonPath().doesNotExist()}</b>,
+	 * which cannot tell an absent member from a present null one and so passes either way. That
+	 * is the whole difference {@code @JsonInclude(NON_NULL)} on {@link TransferResponse} makes,
+	 * and the difference between the published schema being true and being aspirational, so the
+	 * assertion has to be able to see it. One substring covers both members: the longer name
+	 * begins with the shorter.
+	 */
+	@Test
+	@DisplayName("a same-Currency Transfer comes back with no rate at all")
+	void reportsNoRateForATransferThatNeededNone() {
+		insertTransfer(TransferStatus.SETTLED);
+
+		client().get().uri(TRANSFERS + "/" + TRANSFER)
+				.exchange()
+				.expectStatus().isOk()
+				.expectBody(String.class)
+				.value(body -> assertThat(body).doesNotContain("exchangeRate"));
 	}
 
 	/**
@@ -290,7 +335,10 @@ class OneTransferByIdTest extends BootedApplicationTest {
 		insertCheck(Check.MANUAL_APPROVAL, Verdict.APPROVED);
 	}
 
-	/** The amount is the same on both sides for every Transfer whose ledger is the claim. */
+	/**
+	 * The amount is the same on both sides for every Transfer whose ledger is the claim, which
+	 * also makes this the Transfer that was never quoted.
+	 */
 	private void insertTransfer(TransferStatus status) {
 		Money sameOnBothSides = new Money(100_00L, Currency.EUR);
 		insertTransfer(status, sameOnBothSides, sameOnBothSides);

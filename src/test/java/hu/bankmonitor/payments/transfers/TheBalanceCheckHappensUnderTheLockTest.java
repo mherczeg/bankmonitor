@@ -29,6 +29,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the window design decision 6 exists to close. The concurrency tests would not catch it
  * either, because the real check still runs under the lock afterwards.
  *
+ * <p><b>The two phases are driven separately here, and the statement log is cleared between
+ * them</b>, because design decision 4's phase two reads both Accounts' Currencies with no lock
+ * at all — deliberately, so that the Exchange Rate is fetched before any lock is taken. Running
+ * the two together would put those unlocked reads inside the window below and make the claim
+ * false for the right reason, which is worse than making it narrower. What phase two reads is
+ * held to its own claim by {@code AccountCurrenciesAreReadWithoutALockTest}: two rows, both
+ * without {@code for update}, and one field of each that cannot go stale.
+ *
  * <p>{@link ConcurrentReservationsHoldTheBalanceTest} is the consequence of the ordering and
  * this is the ordering itself, which is the same division of labour ticket 12 drew between
  * {@code AccountLockIsASelectForUpdateTest} and {@code AccountsLockInAscendingIdOrderTest}.
@@ -52,7 +60,7 @@ class TheBalanceCheckHappensUnderTheLockTest extends TransferScenario {
 	@Test
 	@DisplayName("every Account a reservation reads is read under a row lock")
 	void readsNoAccountOutsideTheLock() {
-		reservation.reserve(transferOf(80_00L, SOURCE, DESTINATION));
+		reserveWithOnlyTheLockedPhaseRecorded(transferOf(80_00L, SOURCE, DESTINATION));
 
 		assertThat(accountReads())
 				.as("both Accounts are read, and neither without a lock")
@@ -67,13 +75,25 @@ class TheBalanceCheckHappensUnderTheLockTest extends TransferScenario {
 	@Test
 	@DisplayName("nothing is written until both Accounts are locked")
 	void writesNothingBeforeBothLocksAreHeld() {
-		reservation.reserve(transferOf(80_00L, SOURCE, DESTINATION));
+		reserveWithOnlyTheLockedPhaseRecorded(transferOf(80_00L, SOURCE, DESTINATION));
 
 		List<String> issued = statements.captured();
 
 		assertThat(lastIndexOf(issued, "for update"))
 				.as("the writes follow the locks")
 				.isLessThan(firstWriteIn(issued));
+	}
+
+	/**
+	 * {@link TransferScenario#reserve} runs both phases in one call, which is what every other
+	 * scenario wants. Here they have to be separable: what is under test is the statements the
+	 * second phase issues, and the first one's unlocked Currency reads would otherwise be
+	 * counted among them.
+	 */
+	private void reserveWithOnlyTheLockedPhaseRecorded(ReservationRequest request) {
+		ConvertedAmounts amounts = quotes.convert(request);
+		statements.forget();
+		reservation.reserve(request, amounts);
 	}
 
 	private List<String> accountReads() {

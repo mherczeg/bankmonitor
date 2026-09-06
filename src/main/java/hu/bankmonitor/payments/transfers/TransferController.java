@@ -4,6 +4,7 @@ import hu.bankmonitor.payments.accounts.InsufficientFundsException;
 import hu.bankmonitor.payments.accounts.UnknownAccountException;
 import hu.bankmonitor.payments.common.Money;
 import hu.bankmonitor.payments.common.ProblemType;
+import hu.bankmonitor.payments.fx.ExchangeRateUnavailableException;
 import hu.bankmonitor.payments.idempotency.IdempotencyKeyReusedException;
 import hu.bankmonitor.payments.idempotency.IdempotentExecution;
 import hu.bankmonitor.payments.idempotency.RequestInProgressException;
@@ -73,8 +74,12 @@ class TransferController {
 	private static final String INSUFFICIENT_FUNDS_DETAIL =
 			"The source Account's Available Balance does not cover this Transfer.";
 
-	private static final String CROSS_CURRENCY_DETAIL =
-			"This service cannot yet convert between the two Accounts' Currencies.";
+	private static final String ROUNDS_TO_ZERO_DETAIL =
+			"This amount converts to nothing in the destination Account's Currency.";
+
+	private static final String FX_UNAVAILABLE_DETAIL =
+			"The Exchange Rate provider did not answer, so this Transfer could not be priced. "
+					+ "Retry with the same Idempotency Key.";
 
 	private static final String REQUEST_IN_PROGRESS_DETAIL =
 			"A request with this Idempotency Key is still being processed. Retry with the same key.";
@@ -90,6 +95,22 @@ class TransferController {
 	 */
 	private static final String RETRY_AFTER_SECONDS = "1";
 
+	/**
+	 * Seconds, and rather more of them, because the work this one asks a client to wait out
+	 * is somebody else's server rather than one of our transactions. A request reaching this
+	 * refusal has already spent the whole retry budget of {@code payments.fx.*} — three
+	 * attempts with a backing-off delay, each bounded by the read timeout — so a client
+	 * coming back inside that window would only spend it again against a provider that has
+	 * had no time to recover.
+	 *
+	 * <p>Deliberately a constant rather than something derived from those settings: this is
+	 * a client-facing promise about an outage, and tying it to the client's own timeouts
+	 * would make retuning a timeout silently retune the advice given to every caller.
+	 */
+	private static final String FX_RETRY_AFTER_SECONDS = "5";
+
+	private final TransferQuotes quotes;
+
 	private final FundsReservation reservation;
 
 	private final TransferLookup transfers;
@@ -98,8 +119,9 @@ class TransferController {
 
 	private final Clock clock;
 
-	TransferController(FundsReservation reservation, TransferLookup transfers,
+	TransferController(TransferQuotes quotes, FundsReservation reservation, TransferLookup transfers,
 			IdempotentExecution requests, Clock clock) {
+		this.quotes = quotes;
 		this.reservation = reservation;
 		this.transfers = transfers;
 		this.requests = requests;
@@ -184,17 +206,20 @@ class TransferController {
 			@UUID(version = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
 					letterCase = UUID.LetterCase.INSENSITIVE, allowNil = false) String idempotencyKey,
 			@Valid @RequestBody CreateTransferRequest request) {
+		ReservationRequest reservationRequest = request.reservationAt(clock.instant());
 		TransferResponse requested = requests.executeOnce(idempotencyKey, request.payloadHash(),
 				TransferResponse.class,
-				() -> TransferResponse.of(reservation.reserve(request.reservationAt(clock.instant()))));
+				() -> quotes.convert(reservationRequest),
+				amounts -> TransferResponse.of(reservation.reserve(reservationRequest, amounts)));
 		return ResponseEntity.created(URI.create(PATH + "/" + requested.id())).body(requested);
 	}
 
 	/**
 	 * Each of the four ways a requested Transfer is refused is {@code 422} rather than
-	 * {@code 400}. Each is decided against Accounts the request could not see, so the request
-	 * was well-formed and this API understood it — which is exactly the distinction the two
-	 * statuses draw. A {@code 404} for an unknown Account was rejected for a sharper reason:
+	 * {@code 400}. Each is decided against something the request could not see — two
+	 * Accounts, or the rate they convert at — so the request was well-formed and this API
+	 * understood it, which is exactly the distinction the two statuses draw. A {@code 404}
+	 * for an unknown Account was rejected for a sharper reason:
 	 * this API answers {@code 404} when the <em>path</em> names nothing, which is what
 	 * {@link #handleUnknownTransfer} is and what {@code /api/transfers} never is.
 	 */
@@ -227,12 +252,50 @@ class TransferController {
 		return problem;
 	}
 
+	/**
+	 * Everything the conversion compared, because none of it survives the rollback: what
+	 * would have been debited, in what, where it was going, and the rate that made it
+	 * nothing. An operator's remedy is to send more, and this is what tells them how much
+	 * more.
+	 */
 	@ExceptionHandler
-	ProblemDetail handleCrossCurrencyTransfer(CrossCurrencyTransferNotSupportedException refusal) {
-		ProblemDetail problem = refusalOf(ProblemType.CROSS_CURRENCY_UNSUPPORTED, CROSS_CURRENCY_DETAIL);
-		problem.setProperty("sourceCurrency", refusal.getSourceCurrency());
+	ProblemDetail handleConversionRoundsToZero(ConversionRoundsToZeroException refusal) {
+		Money debitedAmount = refusal.getDebitedAmount();
+		ProblemDetail problem = refusalOf(ProblemType.CONVERSION_ROUNDS_TO_ZERO, ROUNDS_TO_ZERO_DETAIL);
+		problem.setProperty("debitedAmountMinorUnits", debitedAmount.minorUnits());
+		problem.setProperty("debitedAmountCurrency", debitedAmount.currency());
 		problem.setProperty("destinationCurrency", refusal.getDestinationCurrency());
+		problem.setProperty("exchangeRate", refusal.getExchangeRate());
 		return problem;
+	}
+
+	/**
+	 * The one failure this endpoint answers that is nobody's fault on this side of the wire,
+	 * and the only {@code 5xx} it raises deliberately. {@code 503} rather than {@code 500}
+	 * because the distinction is the whole message: the request was fine, this service is
+	 * fine, and a third party it depends on is not — so coming back later is worth doing,
+	 * which the {@code Retry-After} says in the machine-readable half.
+	 *
+	 * <p><b>The Idempotency Key is left {@code FAILED} by the port</b>, so the retry this
+	 * invites executes properly rather than replaying this failure. That is what makes the
+	 * lean retry policy of ticket 25 a complete answer rather than a give-up: three attempts
+	 * inside one request, and the client's own retry after them.
+	 *
+	 * <p>The pair and the attempt count are reported because "we asked three times" is the
+	 * difference between a blip this application already absorbed and an outage it never had
+	 * a chance against — and the pair is the provider's failure rather than the caller's
+	 * Accounts, which is why the members are named for the quote and not for the Transfer.
+	 */
+	@ExceptionHandler
+	ResponseEntity<ProblemDetail> handleExchangeRateUnavailable(ExchangeRateUnavailableException outage) {
+		ProblemDetail problem = TransferProblems.of(HttpStatus.SERVICE_UNAVAILABLE,
+				ProblemType.FX_PROVIDER_UNAVAILABLE, FX_UNAVAILABLE_DETAIL);
+		problem.setProperty("baseCurrency", outage.getBase());
+		problem.setProperty("quoteCurrency", outage.getQuote());
+		problem.setProperty("attempts", outage.getAttempts());
+		return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+				.header(HttpHeaders.RETRY_AFTER, FX_RETRY_AFTER_SECONDS)
+				.body(problem);
 	}
 
 	/**

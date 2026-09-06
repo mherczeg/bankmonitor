@@ -165,7 +165,7 @@ class ConcurrentReservationsHoldTheBalanceTest extends TransferScenario {
 
 	private Attempt attempt(ReservationRequest request) {
 		try {
-			return new Attempt(reservation.reserve(request), null);
+			return new Attempt(reserve(request), null);
 		}
 		catch (RuntimeException refusal) {
 			return new Attempt(null, refusal);

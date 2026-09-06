@@ -19,7 +19,7 @@ const RETRYING_HELPS: Record<ProblemType, boolean> = {
   'urn:problem:self-transfer': false,
   'urn:problem:unknown-account': false,
   'urn:problem:insufficient-funds': true,
-  'urn:problem:cross-currency-unsupported': false,
+  'urn:problem:conversion-rounds-to-zero': false,
   'urn:problem:check-not-required': false,
   'urn:problem:transfer-not-pending': false,
   'urn:problem:request-in-progress': true,

@@ -1,7 +1,9 @@
 package hu.bankmonitor.payments.accounts;
 
+import hu.bankmonitor.payments.common.Currency;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 
 import java.util.List;
@@ -50,4 +52,17 @@ interface AccountRepository extends Repository<Account, Long> {
 	 */
 	@Lock(PESSIMISTIC_WRITE)
 	Optional<Account> findAndLockById(long accountId);
+
+	/**
+	 * The one field of an Account that may be read without locking the row, because nothing
+	 * can change it — {@link AccountCurrencies} has why that matters and what it buys.
+	 *
+	 * <p>A written query rather than a derived one: the Currency is a component of the
+	 * embedded balance rather than a property of {@link Account}, so there is no
+	 * {@code findCurrencyById} for Spring Data to derive from the entity's shape. Projecting
+	 * it in the query rather than selecting the entity and reading the field is what keeps
+	 * this from being a full read of a row the caller is not allowed to trust.
+	 */
+	@Query("select account.balance.currency from Account account where account.id = :accountId")
+	Optional<Currency> findCurrencyById(long accountId);
 }

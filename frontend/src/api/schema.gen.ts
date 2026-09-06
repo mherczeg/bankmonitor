@@ -117,6 +117,9 @@ export interface components {
             creditedAmountMinorUnits: number;
             /** @enum {string} */
             creditedAmountCurrency: "EUR" | "USD" | "HUF";
+            exchangeRate?: number;
+            /** Format: date-time */
+            exchangeRateFetchedAt?: string;
             /** Format: date-time */
             createdAt: string;
             checks?: components["schemas"]["CheckResponse"][];
@@ -143,7 +146,7 @@ export interface components {
          * @description The URN a client branches on, and the only member of the document it may branch on.
          * @enum {string}
          */
-        ProblemType: "urn:problem:validation-failed" | "urn:problem:malformed-request" | "urn:problem:unsupported-media-type" | "urn:problem:method-not-allowed" | "urn:problem:not-found" | "urn:problem:forbidden" | "urn:problem:self-transfer" | "urn:problem:unknown-account" | "urn:problem:insufficient-funds" | "urn:problem:cross-currency-unsupported" | "urn:problem:check-not-required" | "urn:problem:transfer-not-pending" | "urn:problem:request-in-progress" | "urn:problem:idempotency-key-reused" | "urn:problem:fx-provider-unavailable" | "urn:problem:client-error" | "urn:problem:internal-error";
+        ProblemType: "urn:problem:validation-failed" | "urn:problem:malformed-request" | "urn:problem:unsupported-media-type" | "urn:problem:method-not-allowed" | "urn:problem:not-found" | "urn:problem:forbidden" | "urn:problem:self-transfer" | "urn:problem:unknown-account" | "urn:problem:insufficient-funds" | "urn:problem:conversion-rounds-to-zero" | "urn:problem:check-not-required" | "urn:problem:transfer-not-pending" | "urn:problem:request-in-progress" | "urn:problem:idempotency-key-reused" | "urn:problem:fx-provider-unavailable" | "urn:problem:client-error" | "urn:problem:internal-error";
         /** @description A single rejected value, against the field that carried it. */
         ValidationError: {
             field: string | null;

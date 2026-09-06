@@ -1,15 +1,12 @@
 package hu.bankmonitor.payments.transfers.checks;
 
-import hu.bankmonitor.payments.common.Money;
 import hu.bankmonitor.payments.transfers.Transfer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 
-import static hu.bankmonitor.payments.common.Currency.EUR;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -76,10 +73,14 @@ class CheckLedgerTest {
 	 * A Transfer that has been written, which is what {@code openFor} requires and what a
 	 * generated identifier makes awkward to hand it. Overriding the getter says the one thing
 	 * about the Transfer this test depends on and nothing else.
+	 *
+	 * <p>Over the constructor JPA materialises a row with, rather than the one that requests
+	 * a Transfer: ticket 26 made that one package-private, because the reservation is the
+	 * only thing that may create a Transfer and this package is not it. A Transfer standing
+	 * for a stored row is what this fixture is anyway.
 	 */
 	private static Transfer written() {
-		Money euro = new Money(10_00L, EUR);
-		return new Transfer(1L, 2L, euro, euro, Instant.parse("2026-09-05T10:15:30Z")) {
+		return new Transfer() {
 			@Override
 			public Long getId() {
 				return 1L;

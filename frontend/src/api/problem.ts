@@ -111,13 +111,20 @@ const MESSAGES: Record<ProblemType, ProblemMessage> = {
   },
 
   /**
-   * Names a capability this service does not have yet rather than a rule the request
-   * broke, which is why the wording says "yet" and ticket 26 will delete this entry
-   * rather than reword it.
+   * The entry that replaced `urn:problem:cross-currency-unsupported`, which named a
+   * capability the service did not have and was deleted rather than reworded once it had
+   * it. What is left is a refusal about one amount: the conversion is supported, and this
+   * particular amount converts to nothing.
+   *
+   * Not retryable, and the reason is worth being sure of — a rate that moved would change
+   * the answer, so this looks like the insufficient-funds case above. It is not: the
+   * remedy is a larger amount, which is something to do on this screen rather than
+   * something to wait for, and advising a wait would send an operator back to a form they
+   * would have to change anyway.
    */
-  'urn:problem:cross-currency-unsupported': {
-    title: 'The two Accounts are in different Currencies',
-    body: 'This service cannot convert between Currencies yet, so a Transfer has to run between two Accounts holding the same one. Pick Accounts that match.',
+  'urn:problem:conversion-rounds-to-zero': {
+    title: 'That amount is too small to convert',
+    body: 'Converted into the Currency the destination Account holds, it comes to nothing — so the Transfer would take money out and put none in. Send a larger amount.',
     retryable: false,
   },
 

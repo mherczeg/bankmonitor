@@ -82,11 +82,18 @@ class LockedPathTouchesOnlyTheDatabaseTest {
 	 *
 	 * <p>Deliberately not "everything that calls {@link AccountLocking}". The caller is
 	 * where the transaction is opened, so widening this to callers looks stricter and is
-	 * wrong: ticket 26 gives {@code FundsReservation} an Exchange Rate port to call in the
-	 * phase <em>before</em> the transaction, which is precisely what design decision 4 asks
-	 * for, and this rule cannot tell the two phases apart. When that arrives the entry below
-	 * has to come out, and ticket 26 asserts the phase ordering the other way, in
-	 * {@code transfers}.
+	 * wrong: it would name whatever fetches the Exchange Rate in design decision 4's phase
+	 * two, which runs <em>before</em> the transaction and is exactly where a provider call
+	 * belongs — and this rule cannot tell the two phases apart.
+	 *
+	 * <p><b>The {@code FundsReservation} entry was predicted to expire in ticket 26 and did
+	 * not.</b> The prediction assumed that ticket would hand this class an Exchange Rate port
+	 * of its own; it instead split the fetch into a second bean, {@code TransferQuotes}, which
+	 * hands down a type naming nothing from {@code fx}. So the reservation still reaches only
+	 * the database, the entry still holds, and the split is what kept it holding — the rule
+	 * shaped the design rather than being weakened to admit one.
+	 * {@code TheRateIsFetchedWithNoTransactionOpenTest} makes the other half of the claim,
+	 * about where the fetch happens, from inside the provider during a real request.
 	 *
 	 * <p>Class names rather than {@code Class} literals, because {@code FundsReservation} is
 	 * package-private in {@code transfers} by §30 and so cannot be named from this package —

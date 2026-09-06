@@ -1,5 +1,6 @@
 package hu.bankmonitor.payments.idempotency;
 
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -32,10 +33,20 @@ import java.util.function.Supplier;
  * the two could commit apart, a crash between them would leave money reserved behind a
  * claim that answers every retry with a refusal.
  *
- * <p><b>An operation that throws releases the claim</b>, so the same key resubmitted is a
- * retry rather than a permanent refusal. That covers a refused request as much as an
- * infrastructure failure — both are reservation-time outcomes, and the guarantee this port
- * makes is about the request rather than about what the Transfer goes on to do.
+ * <p><b>What the operation needs but must not hold a lock across runs first, outside that
+ * transaction.</b> That is design decision 4's phase two, and it is a second argument rather
+ * than something a caller can do before calling: it has to happen <em>after</em> the key is
+ * claimed, so that a duplicate never pays for it, and <em>before</em> the transaction opens,
+ * so that a slow third party is never something a row lock waits on. Ticket 17 left the
+ * parameter unwritten until a caller had one; ticket 26's Exchange Rate fetch is that
+ * caller.
+ *
+ * <p><b>Anything that throws — the resolution as much as the operation — releases the
+ * claim</b>, so the same key resubmitted is a retry rather than a permanent refusal. That
+ * covers a refused request as much as an infrastructure failure: a provider that failed
+ * every attempt is exactly the case where failing to the caller must not mean giving up on
+ * the key. Both are reservation-time outcomes, and the guarantee this port makes is about
+ * the request rather than about what the Transfer goes on to do.
  */
 public interface IdempotentExecution {
 
@@ -56,13 +67,16 @@ public interface IdempotentExecution {
 	 *                       mistake rather than a retry
 	 * @param responseType   the type the stored response is read back as, which is the type
 	 *                       the operation returns
+	 * @param resolution     design decision 4's phase two: anything the operation needs that
+	 *                       is too slow to hold a lock across, run once the key is claimed
+	 *                       and before the transaction opens
 	 * @param operation      the work to run at most once for this key, in a transaction
-	 *                       this port opens
+	 *                       this port opens, over what {@code resolution} produced
 	 * @throws RequestInProgressException   if the key is claimed and its work has not
 	 *                                      finished — retryable, and the only one of the two
 	 *                                      that is
 	 * @throws IdempotencyKeyReusedException if the key was claimed for a different payload
 	 */
-	<T> T executeOnce(String idempotencyKey, String payloadHash, Class<T> responseType,
-			Supplier<T> operation);
+	<R, T> T executeOnce(String idempotencyKey, String payloadHash, Class<T> responseType,
+			Supplier<R> resolution, Function<R, T> operation);
 }

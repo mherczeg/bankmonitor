@@ -28,13 +28,13 @@ Failure paths:
 
 **Blocked by:** 07, 17, 25
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A cross-Currency Transfer converts at the fetched rate and credits the destination in
+- [x] A cross-Currency Transfer converts at the fetched rate and credits the destination in
       its own Currency
-- [ ] The rate and its fetch timestamp are stored on the Transfer and returned by the API
-- [ ] A same-Currency Transfer makes no call to the provider
-- [ ] A conversion rounding to zero is `422`
-- [ ] Provider failure returns `503` with the provider's type URN and a `Retry-After`
-- [ ] After a provider failure the key is `FAILED`, and resubmitting the same key succeeds
-- [ ] The rate is fetched with no transaction open and no lock held
+- [x] The rate and its fetch timestamp are stored on the Transfer and returned by the API
+- [x] A same-Currency Transfer makes no call to the provider
+- [x] A conversion rounding to zero is `422`
+- [x] Provider failure returns `503` with the provider's type URN and a `Retry-After`
+- [x] After a provider failure the key is `FAILED`, and resubmitting the same key succeeds
+- [x] The rate is fetched with no transaction open and no lock held

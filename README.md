@@ -31,7 +31,7 @@ see [`frontend/README.md`](frontend/README.md).
 cd frontend && npm test   # frontend
 ```
 
-Expect **136 passing backend tests** and **6 in the frontend**, with no Docker daemon
+Expect **202 passing backend tests** and **62 in the frontend**, with no Docker daemon
 involved. The backend suite runs on an in-memory H2 database; Testcontainers was rejected
 precisely so this command works on a clean machine.
 
@@ -40,7 +40,7 @@ precisely so this command works on a clean machine.
 Two processes, in two terminals.
 
 ```bash
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev   # http://localhost:8080
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev,mock-fx   # http://localhost:8080
 ```
 
 ```bash
@@ -56,6 +56,11 @@ purpose. Without the flag the application starts empty — which is what the tes
 and what a deployment would get. Demo rows are seeded by a `@Profile("dev")` startup runner
 rather than by a migration, because a migration runs everywhere the schema does, and every
 test that reads the accounts table would then start from someone else's fixtures.
+
+**`mock-fx` is the second profile, and it is separate from `dev` on purpose** — it switches
+on the [stand-in Exchange Rate provider](#the-exchange-rate-provider-is-a-stand-in-that-misbehaves)
+below. Naming both is what a full local run wants; naming only `dev` gives you demo accounts
+and no rate source, which is the right shape for pointing the application at a real provider.
 
 | Endpoint | What it is |
 |---|---|
@@ -139,7 +144,7 @@ build.
 
 ## What is built so far
 
-Tickets 01–14, 16–20 and 31–36 of 44: the skeleton, schema management, the package
+Tickets 01–14, 16–20, 24 and 31–36 of 44: the skeleton, schema management, the package
 structure the domain code will be written into, the security chain in front of it, the error
 contract every endpoint will answer with, the value type every amount in the system is
 expressed in and the single conversion between currencies, the first entity and the first
@@ -147,11 +152,11 @@ table, the first endpoint that writes to it and the first that reads it back, th
 and the locking rule the concurrency design rests on, the reservation that rule protects,
 the endpoint a client posts a Transfer to, the claim on an Idempotency Key, the Check
 Ledger a Transfer has to clear before it settles, the one operation that answers a Check
-and moves the money, the frontend's shell, the generated API types that join the two
-halves, the frontend edge that turns Minor Units into decimals, the reading an operator
-gets of a failed request, the client half of the Idempotency Key, the stream message that
-is nothing but a cache invalidation, and the two ecosystem bets that had to be settled
-first. **Both bets won.**
+and moves the money, the third-party rate provider the resilience work will be aimed at,
+the frontend's shell, the generated API types that join the two halves, the frontend edge
+that turns Minor Units into decimals, the reading an operator gets of a failed request, the
+client half of the Idempotency Key, the stream message that is nothing but a cache
+invalidation, and the two ecosystem bets that had to be settled first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type
@@ -409,6 +414,66 @@ retry can never succeed. The wording is the frontend's own, because a document's
 is a status reason phrase and its `detail` is written for whoever is reading the response,
 neither of which an operator can act on. [The frontend README](frontend/README.md#what-an-operator-is-told-when-a-request-fails)
 has the surface.
+
+## The Exchange Rate provider is a stand-in that misbehaves
+
+**The mock FX provider is a real HTTP endpoint inside this application**, switched on by
+the `mock-fx` profile and absent without it. It is an endpoint rather than a stubbed bean
+because a bean sits *above* the HTTP client: the timeouts, retries and error mapping that
+the resilience work exists to demonstrate would never run against one, and the thing being
+demonstrated would be the thing mocked out.
+
+```console
+$ curl -s 'localhost:8080/mock/fx/rates?base=EUR&quote=HUF'
+{"base":"EUR","quote":"HUF","rate":395.000000}
+
+$ curl -s 'localhost:8080/mock/fx/rates?base=EUR&quote=HUF'   # the same call, moments later
+{"error":"rate_service_unavailable",
+ "message":"The rate service is temporarily unavailable. Try again shortly."}
+```
+
+It quotes EUR, USD and HUF from a single pivot rather than from a table of pairs, so its
+cross rates cannot disagree with each other. **Two dials make it misbehave**, and they are
+the reason it is worth running at all:
+
+| Property | Default | What turning it does |
+|---|---|---|
+| `payments.mock-fx.failure-rate` | `0.3` | The share of requests answered `503` instead of a rate. `0` is a dull, reliable provider — which is what the tests that are about something else set. `1` fails every call, which is how you watch a retry budget run out. |
+| `payments.mock-fx.latency` | `200ms` | How long **every** response is held back, the failures included. Raise it past a client's read timeout to make the timeout fire; the failures are slow too, so a timeout cannot be tuned against the success path alone. |
+
+**It is deliberately outside this application's cross-cutting layers**, because a third
+party that wore our security headers, our error shape and our CORS policy would be our own
+application in a costume — and the client written against it would be tested against a
+fiction. Four mechanisms, each verified against a running server rather than by reading
+the configuration back:
+
+- **Security is bypassed, not permitted.** `web.ignoring()` on `/mock/**` takes the paths
+  out of the filter chain entirely; under `permitAll` the response would still come back
+  carrying `X-Content-Type-Options` and the rest, which is our server signing somebody
+  else's response. The absent header is what the test asserts on. Spring Security logs a
+  startup warning advising `permitAll` instead — correct for endpoints that are ours, and
+  wrong for this one.
+- **Its errors are its own**, a plain `{error, message}` and never an RFC 9457 problem
+  document, so the claim above — that a caller who has parsed one of ours has parsed all
+  of them — stays true. They come from `@ExceptionHandler` methods on the mock controller,
+  which win over any `@ControllerAdvice` without anything having to be ordered.
+- **It is out of the CORS mapping**, which covers `/api/**` only. It stands in for a
+  service reached server-to-server; no browser should be able to call it. This one is
+  asserted twice on purpose — a preflight that comes back allowing nothing is the
+  caller's-eye view, but it would stay green even if the mapping did name `/mock/**`,
+  because the security bypass means the CORS filter never runs on those paths. The
+  mapping is therefore also asked directly what policy it holds for them, which is the
+  half that can fail on its own.
+- **It is hidden from `/v3/api-docs`**, which is a layer of ours in the same sense as the
+  others and the only one whose leak outlives the process: the frontend's types are
+  generated from that document against a *running* backend, so without this a developer
+  who ran with `mock-fx` and regenerated would commit a third party's endpoint into
+  `schema.gen.ts`.
+
+**The consequence worth keeping in view: the application now calls itself over HTTP.** On
+a bounded thread pool that can deadlock under load — an inbound request holds a thread
+while waiting for a second thread to serve its own outbound call — which is what makes
+`spring.threads.virtual.enabled=true` load-bearing here rather than a nicety.
 
 ## The frontend's types are generated, not written
 

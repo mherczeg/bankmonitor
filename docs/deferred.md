@@ -545,3 +545,30 @@ by an error has somewhere to point.
 `recordVerdict`, returning the Transfer's current status when the Check's row
 already carries the same Verdict and refusing otherwise. It is a change to one
 branch, and the branch is written so that it stays one.
+
+---
+
+## Request logging and MDC correlation
+
+**Deferred.** Nothing in this application writes a request log or stamps a
+correlation id into the logging MDC. It registers no servlet filter of its own at
+all; Spring Security's chain is the only filter here that is a decision rather
+than a Boot default.
+
+**Why deferred:** every claim this build makes about behaviour under load — the
+lock order, the concurrent reservations, the retries — is made by a test that
+fails when it stops being true, not by a log someone reads afterwards. A request
+log would be the second, weaker copy of that evidence, and the correlation half
+of it only starts paying once the asynchronous lifecycle spans more than one
+process.
+
+**What it would take, and the constraint it inherits:** an `OncePerRequestFilter`
+registered through a `FilterRegistrationBean` with
+`addUrlPatterns("/api/*", "/internal/*")` — **explicitly, not the default
+`/*`.** [Ticket 24](design-decisions/24-mock-fx-provider.md)'s stand-in FX
+provider serves `/mock/**` and is meant to be indistinguishable from a third
+party; a filter that logged its requests, or stamped our correlation id onto
+them, would put our observability inside somebody else's service. §28 names this
+exclusion as one of five mechanisms, and it is the one ticket 24 could not build
+or verify: a rule asserting that no filter matches `/mock/*` passes trivially
+when there are no filters, which is green for the wrong reason.

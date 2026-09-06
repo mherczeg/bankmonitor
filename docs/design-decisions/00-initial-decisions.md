@@ -990,9 +990,11 @@ job:
   `web.ignoring().requestMatchers("/mock/**")`. Spring's docs discourage
   `ignoring()` for real endpoints because it forgoes security headers; here that
   is exactly the point.
-- **`@RestControllerAdvice(basePackages = "…payments.api")`**, scoped rather
-  than global — otherwise a "third-party service" emits *our* `ProblemDetail`
-  shape and the fiction collapses.
+- **`@ExceptionHandler` methods on the mock controller itself**, rather than the
+  application's global advice — otherwise a "third-party service" emits *our*
+  `ProblemDetail` shape and the fiction collapses. A handler declared on a
+  controller is resolved ahead of every `@ControllerAdvice`, so nothing has to
+  be ordered and the global advice stays global.
 - **`FilterRegistrationBean` with `addUrlPatterns("/api/*", "/internal/*")`** so
   logging and MDC filters never touch it.
 - Out of the `CorsConfigurationSource` mapping entirely — it is
@@ -1004,6 +1006,11 @@ classic thread pool that can deadlock under load — the inbound request holds a
 thread while waiting for a second one to serve its own outbound call. **This
 makes `spring.threads.virtual.enabled=true` load-bearing rather than a
 nicety**, and it is worth one README sentence saying why.
+
+> **Built in [ticket 24](24-mock-fx-provider.md)**, which corrects the scoped-advice
+> bullet above — it named a `payments.api` package §30's layout never creates — adds
+> the published OpenAPI document as a sixth layer to exclude, and records why the
+> filter bullet had nothing to register.
 
 ---
 

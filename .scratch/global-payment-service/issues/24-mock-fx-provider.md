@@ -23,11 +23,19 @@ waiting for a second thread to serve its own outbound call.
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done — with the logging exclusion consciously deferred; see the third box
 
-- [ ] The mock serves rates over real HTTP under a dedicated profile, and is absent
+- [x] The mock serves rates over real HTTP under a dedicated profile, and is absent
       otherwise
-- [ ] Its failure rate and latency are configurable
-- [ ] It is excluded from the application's security, error-handling, logging and CORS
-      layers, each verified rather than assumed
-- [ ] Its errors are its own, not the application's problem documents
+- [x] Its failure rate and latency are configurable
+- [~] It is excluded from the application's security, error-handling, logging and CORS
+      layers, each verified rather than assumed — **three of the four.** Security,
+      error-handling and CORS are excluded and verified by effect, as is the published
+      OpenAPI document, a layer neither this ticket nor §28 listed. **Logging is not, and could not
+      be:** this application registers no logging or MDC filter, so there is nothing to
+      exclude it from, and a rule asserting that no filter matches `/mock/*` would pass
+      over zero filters — green for the wrong reason. The URL patterns the first such
+      filter must carry are recorded in [deferred.md](../../../docs/deferred.md) instead,
+      where whoever adds one will read them. Left unticked on purpose: the criterion as
+      written is not met.
+- [x] Its errors are its own, not the application's problem documents

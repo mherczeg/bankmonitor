@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { PROBLEM_TYPES, problemToMessage, UNRECOGNISED_PROBLEM } from './problem'
 import problemSource from './problem.ts?raw'
 import schemaSource from './schema.gen.ts?raw'
+import { plainModuleRules } from '../testsupport/plainModule'
 import type { ProblemDocument, ProblemType } from './types'
 
 /**
@@ -114,15 +115,7 @@ describe('a failure that is not a problem document this app knows', () => {
  * see `docs/design-decisions/34-problem-document-module.md`.
  */
 describe('the module itself', () => {
-  it('imports nothing but the API types', () => {
-    const specifiers = [...problemSource.matchAll(/\bimport\b[^;\n]*?['"]([^'"]+)['"]/g)]
-
-    expect(specifiers.map(([, specifier]) => specifier)).toEqual(['./types'])
-  })
-
-  it('does not name React at all, in any form an import can take', () => {
-    expect(problemSource).not.toMatch(/react/i)
-  })
+  plainModuleRules(problemSource, ['./records', './types'])
 
   it('does not name the one member of the document it must not branch on', () => {
     expect(problemSource).not.toMatch(/status/i)

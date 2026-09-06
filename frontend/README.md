@@ -57,8 +57,8 @@ src/
   main.tsx            mounts the router inside the query client, imports Bootstrap once
   routeTree.gen.ts    generated — see below
   money.ts            the decimal form of an amount, in and out — see below
-  api/                the API's types, the query client, its retry rule, and how a
-                      failure reads to an operator
+  api/                the API's types, the query client, its retry rule, how a failure
+                      reads to an operator, and where Idempotency Keys come from
   routes/             one file per route; the file tree is the URL tree
 ```
 
@@ -187,6 +187,57 @@ Adding a URN on the backend is a compile error here, not a silently unhandled ca
 message table is a `Record<ProblemType, …>` over the generated union. Ticket 34's design
 record has the argument, including why the module's own source may not contain the word
 *status* — and why a test enforces that.
+
+## The Idempotency Key, and what it identifies
+
+A key identifies **what the operator meant to do**, not an HTTP attempt at doing it.
+Every attempt at one intent — the first, and each retry after a timeout, a `502` or an
+in-progress `409` — goes out under the same key, which is the whole reason the backend
+can tell a retry apart from a second Transfer. `src/api/idempotency.ts` is the only place
+one is minted:
+
+```ts
+const keys = startIntent()   // once, when the form becomes ready
+
+keys.keyFor(payload)   // the key this intent submits under, stable while the payload is
+keys.succeeded()       // the intent went through; the next read starts a new one
+```
+
+Opening the supply mints nothing; the first `keyFor` does. A form that renders the key
+before anyone has submitted anything therefore mints it at that read, and every read
+after it hands back the same one.
+
+**Minting a key inside the request function defeats the entire mechanism.** Every retry
+would arrive under a fresh key, the server would see a brand-new Transfer each time, and
+the network retry the feature exists to make safe becomes the double charge it was meant
+to prevent. That is why the key is held outside the request rather than produced by it.
+
+**An intent is its payload.** Reading the key back with an unchanged payload hands over
+the held one; reading it with a different payload mints a new one, because correcting a
+refused amount is a different thing to have meant. This mirrors the backend, which stores
+a hash of the payload beside the key and answers `urn:problem:idempotency-key-reused` to a
+key arriving under a payload it did not first see. Without the payload half, an operator
+whose Transfer was refused against its Available Balance would correct the amount,
+resubmit under the key already spent on the old one, and hit a refusal that can never
+clear.
+
+**The payload handed to `keyFor` has to be the one that attempt sends** — captured when
+the operator submitted, not read live off the form. A retry that re-read a form edited
+since it went out would see a changed intent, mint a fresh key, and put a second Transfer
+on the wire while the first one is still in flight. A TanStack Query mutation gets this
+right by default: it re-invokes `mutationFn` with the variables `mutate` was called with,
+so the payload a retry sends is the payload the first attempt sent.
+
+**There is no method for reporting a failure**, and that is the design rather than an
+omission: a module that cannot be told about a failure cannot reset on one. Only a success
+and a changed intent start a new key.
+
+Keys are version 4 UUIDs, which is all the backend accepts — anything else is a `400`.
+`crypto.randomUUID` mints them, so the app needs a **secure context**: HTTPS, or the
+`localhost` the dev server serves from. There is no fallback, deliberately — served over
+plain HTTP from anything else, a LAN address during a demo being the realistic case,
+`crypto.randomUUID` is `undefined` and submitting a Transfer throws. Ticket 35's design
+record has the rest.
 
 ## The API types, and when to regenerate them
 

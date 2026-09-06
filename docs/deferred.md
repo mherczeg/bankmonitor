@@ -403,6 +403,32 @@ a non-empty diff.
 
 ---
 
+## Idempotency Keys need a secure context to be minted
+
+**Deferred.** `frontend/src/api/idempotency.ts` mints keys with `crypto.randomUUID`,
+which the Web Crypto API exposes only in a secure context. There is no fallback.
+
+**Why deferred:** every way this app is meant to run already is one — the Vite dev
+server on `localhost`, and any real deployment, which would be over HTTPS. Writing a
+fallback would mean writing a second, weaker UUID source for a situation that is a
+misconfiguration rather than a supported mode.
+
+**Residual risk:** served over plain HTTP from anything but `localhost` — a LAN address
+during a demo is the realistic case — `crypto.randomUUID` is `undefined` and the
+Transfer form throws a `TypeError` on submit. The failure is loud and immediate rather
+than silent, which is the right way round, but it is confusing if nobody has met it.
+
+**What is in place instead:** the constraint is named in the
+[frontend README](../frontend/README.md#the-idempotency-key-and-what-it-identifies)
+beside the module it applies to.
+
+**What it would take:** nothing, if the app is served over HTTPS. If plain-HTTP hosting
+ever has to be supported, a `Math.random`-based version 4 UUID behind a feature check —
+uniqueness is what an Idempotency Key needs, not unguessability — with a comment saying
+why the weaker source is acceptable *here* and nowhere else.
+
+---
+
 ## Fetching a single Account, and the `Location` header that waits on it
 
 **Deferred.** There is no `GET /api/accounts/{id}`, and consequently the `201`

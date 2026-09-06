@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Currency } from './api/types'
 import { CURRENCIES, decimalPlacesIn, formatAmount, parseAmount } from './money'
 import moneySource from './money.ts?raw'
+import { plainModuleRules } from './testsupport/plainModule'
 
 const rejects = (input: string, currency: Currency) => {
   const parsed = parseAmount(input, currency)
@@ -110,13 +111,5 @@ describe('formatting and parsing as inverses', () => {
  * is in `docs/design-decisions/33-money-format-module.md`.
  */
 describe('the module itself', () => {
-  it('imports nothing but the API types', () => {
-    const specifiers = [...moneySource.matchAll(/\bimport\b[^;\n]*?['"]([^'"]+)['"]/g)]
-
-    expect(specifiers.map(([, specifier]) => specifier)).toEqual(['./api/types'])
-  })
-
-  it('does not name React at all, in any form an import can take', () => {
-    expect(moneySource).not.toMatch(/react/i)
-  })
+  plainModuleRules(moneySource, ['./api/types'])
 })

@@ -1,3 +1,4 @@
+import { isRecord } from './records'
 import type { ProblemType } from './types'
 
 /**
@@ -134,9 +135,9 @@ export const problemToMessage = (failure: unknown): ProblemMessage => {
 }
 
 const recognisedTypeOf = (failure: unknown): ProblemType | undefined => {
-  if (typeof failure !== 'object' || failure === null) return undefined
+  if (!isRecord(failure)) return undefined
 
-  const { type } = failure as { type?: unknown }
+  const { type } = failure
 
   // Object.hasOwn, not `in`: `{ type: 'toString' }` would otherwise be recognised and
   // hand back a function off the prototype chain.

@@ -177,6 +177,9 @@ first and must never retry the second.
 > update and the new transaction — and found that the second one has a lock cost
 > this section does not mention: `markFailed` has to be called *after* the failing
 > transaction, not from inside it.
+> **[Ticket 35](35-idempotency-key-module.md)** made the payload-mismatch row
+> unreachable from the frontend rather than merely handled, by keying the client's
+> Idempotency Key on the payload too.
 
 ---
 
@@ -743,8 +746,11 @@ RTL tests ("does this field show its error") touch no network.
 
 **The idempotency-key rule, which is the frontend half of a graded
 requirement:** the key identifies a **user intent**, not an HTTP attempt.
-Generate it once when the form becomes ready, hold it in a ref, and reset it
-only after a success. Generating it inside `mutationFn` defeats the entire
+Generate it once when the form becomes ready, hold it in a ref, and ~~reset it
+only after a success~~ — reset it on a success *and* on a changed payload,
+because a payload the server did not first see is refused under the key it was
+first given, so correcting a rejected amount under the held key can never
+succeed. Generating it inside `mutationFn` defeats the entire
 mechanism — every retry gets a fresh key and the server sees a new transfer.
 
 **Playwright is end-to-mock, not true E2E.** A real browser — real
@@ -777,6 +783,9 @@ render — deterministically, with no `waitForTimeout`. True E2E goes to
 > **[Ticket 34](34-problem-document-module.md)** built the second, keeping this
 > section's signature, and found that its argument has to be `unknown` — a typed
 > parameter would push a cast onto every caller.
+> **[Ticket 35](35-idempotency-key-module.md)** built the third, struck that clause
+> and has the evidence, and extracted the source-pinning block ticket 33 introduced,
+> now that three modules assert it.
 
 ---
 

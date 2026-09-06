@@ -41,6 +41,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | [32 — generated API types](32-openapi-type-generation.md) | springdoc publishes an API that never fails and whose responses are all optional — both closed on the backend; `nullable: true` is inert in OpenAPI 3.1; this generated file's diff is deliberately *not* hidden |
 | [33 — the money format module](33-money-format-module.md) | a formatted amount has to read back into the field it came from, which rules out `Intl` currency formatting; neither direction divides by a hundred; the safe-integer ceiling a `long` count meets in the browser |
 | [34 — the problem document module](34-problem-document-module.md) | the operator reads the module's words, not the document's; `retryable` advises a person while `retry.ts` rules a machine, and they disagree on one `409`; the URN-only rule made mechanical by a test |
+| [35 — the Idempotency Key module](35-idempotency-key-module.md) | an intent is its payload, which makes `idempotency-key-reused` unreachable from this client rather than handled; "a failure does not reset" as a missing method; why the payload comparison may only ever be wrong in one direction |
 
 ## The initial decisions, section by section
 
@@ -50,7 +51,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | §2 | [Authentication is stubbed, not built](00-initial-decisions.md#2-authentication-is-stubbed-not-built) | [04](04-security-chain-cors.md) |
 | §3 | [Idempotency lives in the service layer, behind a seam](00-initial-decisions.md#3-idempotency-lives-in-the-service-layer-behind-a-seam) | [16](16-idempotent-execution.md) |
 | §4 | [Request handling is three phases](00-initial-decisions.md#4-request-handling-is-three-phases) | [13](13-reserve-funds.md), [14](14-request-transfer-endpoint.md), [16](16-idempotent-execution.md) |
-| §5 | [Duplicate resolution](00-initial-decisions.md#5-duplicate-resolution) | [14](14-request-transfer-endpoint.md), [16](16-idempotent-execution.md) |
+| §5 | [Duplicate resolution](00-initial-decisions.md#5-duplicate-resolution) | [14](14-request-transfer-endpoint.md), [16](16-idempotent-execution.md), [35](35-idempotency-key-module.md) |
 | §6 | [Concurrency: pessimistic locks in a deterministic order](00-initial-decisions.md#6-concurrency-pessimistic-locks-in-a-deterministic-order) | [12](12-ordered-account-locking.md), [13](13-reserve-funds.md), [14](14-request-transfer-endpoint.md) |
 | §7 | [Transfers have an asynchronous lifecycle](00-initial-decisions.md#7-transfers-have-an-asynchronous-lifecycle) | [11](11-transfer-entity.md) |
 | §8 | [Orchestration, driven by a per-transfer check ledger](00-initial-decisions.md#8-orchestration-driven-by-a-per-transfer-check-ledger) | [19](19-check-ledger-and-policy.md) |
@@ -69,7 +70,7 @@ are in [`.scratch/global-payment-service/issues/`](../../.scratch/global-payment
 | §21 | [TanStack Router, and TanStack Query owns server state](00-initial-decisions.md#21-tanstack-router-and-tanstack-query-owns-server-state) | [31](31-frontend-toolchain.md) |
 | §22 | [TanStack Form + zod, and no global state library](00-initial-decisions.md#22-tanstack-form--zod-and-no-global-state-library) | [14](14-request-transfer-endpoint.md) |
 | §23 | [Bootstrap 5, CSS only, plus CSS Modules](00-initial-decisions.md#23-bootstrap-5-css-only-plus-css-modules) | [31](31-frontend-toolchain.md) |
-| §24 | [Frontend testing: extract logic, unit test it, Playwright end-to-mock](00-initial-decisions.md#24-frontend-testing-extract-logic-unit-test-it-playwright-end-to-mock) | [31](31-frontend-toolchain.md), [32](32-openapi-type-generation.md), [33](33-money-format-module.md), [34](34-problem-document-module.md) |
+| §24 | [Frontend testing: extract logic, unit test it, Playwright end-to-mock](00-initial-decisions.md#24-frontend-testing-extract-logic-unit-test-it-playwright-end-to-mock) | [31](31-frontend-toolchain.md), [32](32-openapi-type-generation.md), [33](33-money-format-module.md), [34](34-problem-document-module.md), [35](35-idempotency-key-module.md) |
 | §25 | [Backend tests run on H2](00-initial-decisions.md#25-backend-tests-run-on-h2) | [01](01-project-skeleton.md), [10](10-list-accounts-and-seed.md) |
 | §26 | [Frontend API types are generated from OpenAPI](00-initial-decisions.md#26-frontend-api-types-are-generated-from-openapi) | [01](01-project-skeleton.md), [32](32-openapi-type-generation.md) |
 | §27 | [The flaky FX provider: timeouts, retry, then fail to the caller](00-initial-decisions.md#27-the-flaky-fx-provider-timeouts-retry-then-fail-to-the-caller) | — |

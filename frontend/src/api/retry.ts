@@ -1,3 +1,5 @@
+import { isRecord } from './records'
+
 /**
  * How many times a query is attempted in total, the first try included.
  */
@@ -22,7 +24,7 @@ export function shouldRetryQuery(failureCount: number, error: unknown): boolean 
 }
 
 function httpStatusOf(error: unknown): number | undefined {
-  if (typeof error !== 'object' || error === null) return undefined
-  const status = (error as { status?: unknown }).status
+  if (!isRecord(error)) return undefined
+  const { status } = error
   return typeof status === 'number' ? status : undefined
 }

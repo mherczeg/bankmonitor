@@ -115,9 +115,14 @@ answer — its report landed, and here is what it did.
 finding this Check already carries this Verdict, and returning the current status
 as though nothing had happened. It is friendlier, and it buys that friendliness
 with a longer critical section under the row lock and a second reading path into
-the ledger whose only purpose is to decide whether to refuse. If ticket 21 finds
-that a `409` here is the wrong answer for a retrying Check service, this is the
-change to make, and it is a change to one branch.
+the ledger whose only purpose is to decide whether to refuse.
+
+Because this was a judgement call between two defensible answers rather than
+something the design already implied, it was put as a question and answered:
+**the refusal stands.** So ticket 21 inherits the shape and chooses only the
+status code for it. If a retrying Check service later turns out to be badly
+served by an error, absorbing is still a change to one branch, and
+`docs/deferred.md` is where it is written down.
 
 A redelivery that arrives while the Transfer is **still `PENDING`** takes the
 other path entirely: it reaches the ledger, whose update is guarded on the row

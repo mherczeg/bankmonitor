@@ -1,5 +1,7 @@
 # Global Payment Service
 
+> This README is AI generated. for actual human wrote words on the task, read the [`SUBMISSION.md`](SUBMISSION.md)
+
 A payment gateway that holds account balances and moves money between accounts, with
 currency conversion, idempotent retries, and downstream notification of other domain
 services.

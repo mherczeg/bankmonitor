@@ -363,6 +363,15 @@ faith. It can reject as well as approve, so the rejection path is demoable. It
 is a fake consumer, not a fake mechanism — the outbox, ledger and verdict
 endpoint it exercises are all real.
 
+> **Built in [ticket 27](27-outbox-and-poller.md)**, which settled the three
+> things this paragraph's sentence leaves open: what a caller in `transfers`
+> names to write a row — a second public type that is not a second port — which
+> side of a transaction each half runs on, and what stops the poller racing the
+> test suite. The publish is deliberately outside a transaction and the mark
+> inside one of its own, because that ordering is the only one of the three
+> available that is at-least-once rather than at-most-once. §11's `CheckRequested`
+> is the event type this makes possible and ticket 28 emits.
+
 ---
 
 ## 13. Balances: two fields on `Account`
@@ -1158,6 +1167,12 @@ package-private; the **`@Transactional` method** stays public.
 > implementation is JPA rather than the JDBC the tree names, on `accounts` and
 > `transfers`' precedent. Nothing in the package is public, so the line's
 > `IdempotentExecution (public)` is what ticket 17 makes true.
+> **[Ticket 27](27-outbox-and-poller.md)** adds `OutboxEventRecorder` to the
+> `outbox/` line, on ticket 07's precedent: a second public type, and still not a
+> second port — there is one implementation and no seam. The count of ports above
+> is unchanged, and the `OutboxPoller package-private` clause is load-bearing
+> rather than decorative, since it is what makes "the only way to publish an event
+> is to have written it down first" true by compilation.
 
 ---
 

@@ -17,6 +17,19 @@ payload, because a service calling back for the amount is exactly the coupling t
 rejecting polling was meant to avoid. The browser-facing stream (ticket 30) carries almost
 nothing — the browser can call our API.
 
+**Inherited from 27:** `OutboxEventRecorder.record(transferId, eventType, payload)` is what
+a change in `transfers` calls; it is `@Transactional(propagation = MANDATORY)`, so it must
+be called from inside the transaction of the change, and it serialises the payload itself.
+`event_type` is an unconstrained string the outbox does not interpret, so each event type is
+a constant owned by the slice that emits it — a misspelling is a row nobody consumes and
+nothing fails.
+
+**A trap for the end-to-end test below:** unlike the outbox's own `@DataJpaTest` slices, a
+booted `@SpringBootTest` shares `jdbc:h2:mem:payments` with a poller that is *running*, and
+it will publish and mark rows out from under an assertion about what is unsent. Set
+`payments.scheduling.enabled=false` and drive the poll by hand — or, if the test wants the
+poller running, own the timing rather than assuming it.
+
 **Blocked by:** 20, 27
 
 **Status:** ready-for-agent

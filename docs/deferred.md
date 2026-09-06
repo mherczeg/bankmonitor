@@ -200,6 +200,12 @@ gaps are one paragraph to describe.
 
 - **The outbox poller would double-publish** — two instances read the same
   unsent rows. Fix: `SELECT ... FOR UPDATE SKIP LOCKED` on the poll query.
+  [Ticket 27](design-decisions/27-outbox-and-poller.md) built the guard on
+  `markSent` (`sent_at is null`) against this, which **narrows the break without
+  closing it**: it stops the second instance overwriting a timestamp that already
+  recorded when the event went out, and does nothing about the second publish.
+  Delivery is at-least-once, so what leaks is a duplicate consumers already
+  deduplicate — the cost is theirs to absorb, not a correctness break.
 - **Event streams are instance-local** — a connection is held by one instance,
   so a transfer settling on another never reaches it. Fix: shared pub/sub
   between instances.
@@ -208,11 +214,20 @@ gaps are one paragraph to describe.
 
 ## Outbox robustness
 
-**Deferred.** The poller handles the happy path only.
+**Deferred.** The poller's whole answer to a failed publish is to try again on
+the next run. [Ticket 27](design-decisions/27-outbox-and-poller.md) built it:
+a publish that throws costs its own row and no other — the run logs it, leaves
+it unsent and carries on — so nothing is lost and nothing is retried
+intelligently.
 
 **Missing:** retry with backoff on publish failure, a dead-letter path for
 poison events, ordering guarantees for two events on the same transfer, and
-archival of the ever-growing table.
+archival of the ever-growing table. The absence of backoff is what makes a
+permanently undeliverable event a line in the log once per poll interval,
+for ever; the absence of a dead-letter path is why nothing ever takes it out of
+the way. Ticket 27 bounded one run at 100 rows against the archival gap, so an
+unbounded table degrades the poll query rather than pulling the history of the
+system into a scheduled method — a mitigation of the cost, not a closure.
 
 **What it would take:** Spring Modulith's Event Publication Registry provides
 most of it — durable publication tracking, republish on restart, and a

@@ -24,10 +24,10 @@ assumption.
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The outbox table ships as this slice's migration, with the unsent index
-- [ ] A one-method publisher port, with the log-line implementation behind it
-- [ ] An event written in a transaction that rolls back is never published
-- [ ] The poller publishes unsent rows and marks them sent
-- [ ] A publish failure leaves the row unsent for the next run
+- [x] The outbox table ships as this slice's migration, with the unsent index
+- [x] A one-method publisher port, with the log-line implementation behind it
+- [x] An event written in a transaction that rolls back is never published
+- [x] The poller publishes unsent rows and marks them sent
+- [x] A publish failure leaves the row unsent for the next run

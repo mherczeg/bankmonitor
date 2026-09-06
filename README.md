@@ -202,7 +202,7 @@ build.
 
 ## What is built so far
 
-Tickets 01–17, 19–20, 24 and 31–36 of 44: the skeleton, schema management, the package
+Tickets 01–17, 19–20, 24, 27 and 31–36 of 44: the skeleton, schema management, the package
 structure the domain code will be written into, the security chain in front of it, the error
 contract every endpoint will answer with, the value type every amount in the system is
 expressed in and the single conversion between currencies, the first entity and the first
@@ -212,10 +212,11 @@ the endpoint a client posts a Transfer to and the two it is read back from, the 
 Idempotency Key and the duplicate resolution that turns that claim into an answer, the Check
 Ledger a Transfer has to clear before it settles, the one operation that answers a Check and
 moves the money, the third-party rate provider the resilience work will be aimed at, the
-frontend's shell, the generated API types that join the two halves, the frontend edge that
-turns Minor Units into decimals, the reading an operator gets of a failed request, the client
-half of the Idempotency Key, the stream message that is nothing but a cache invalidation, and
-the two ecosystem bets that had to be settled first. **Both bets won.**
+table that keeps a committed change and the news of it from ever disagreeing, the frontend's
+shell, the generated API types that join the two halves, the frontend edge that turns Minor
+Units into decimals, the reading an operator gets of a failed request, the client half of the
+Idempotency Key, the stream message that is nothing but a cache invalidation, and the two
+ecosystem bets that had to be settled first. **Both bets won.**
 
 1. **Hibernate maps a Java `record` as `@Embeddable`.** `Money` is a record by design; if
    Hibernate could not instantiate one through its canonical constructor, every value type
@@ -378,6 +379,39 @@ waits on a second thread of the same server. On a bounded pool that can deadlock
 itself; virtual threads are not scarce, which is also why the design declines a circuit
 breaker. `ApplicationBootsTest` asks the running container what kind of thread served the
 request rather than asserting the property is set — flip the flag off and it fails.
+
+**A committed change and the news of it cannot disagree, because the news is a row written
+by the same transaction.** An Outbox Event describing what happened to a Transfer is
+recorded into `outbox_events` by the operation that caused it, and the recorder refuses to
+run outside a transaction rather than opening one of its own — a recorder that quietly
+opened its own would pass every test that writes an event and reads it back, while breaking
+the one property the table exists for, in the direction nobody looks. So the event and the
+change commit together or neither of them happened. A scheduled poller then publishes what
+has not gone out yet and marks it sent.
+
+**It publishes first and marks second, each mark in its own transaction, and that ordering
+is the whole of the delivery guarantee.** Marking first would be at-most-once: a publish
+that then failed would leave a row claiming the news had gone out, and a Transfer that
+really did settle would be unannounced with nothing anywhere recording that fact — which is
+precisely the failure the outbox is built to prevent. Publishing inside the mark's
+transaction would hold one open across network I/O, the shape the locking rules above exist
+to avoid, and would still not make the pair atomic. So **delivery is at-least-once**: a
+publish that succeeded and a mark that did not commit costs a duplicate, and consumers
+deduplicate — which they must anyway, since exactly-once across a network is not something
+a retry can buy. A publish that throws costs its own row and no other; the run logs it,
+leaves it unsent and carries on, and the next run is the entire retry policy.
+
+**Kafka would be a transport swapped in under `publish()`, not a replacement for the
+table.** "Commit to the database, then send to Kafka" is still two writes with no
+transaction spanning them, which is the reason the table is here at all. In this build that
+one method writes a structured log line — a real implementation with a stand-in far end, so
+the outbox, the poller and the at-least-once contract above them all run exactly as they
+would against a broker. The scheduler driving the poller is gated by
+`payments.scheduling.enabled`, which turns the background actor off without taking the bean
+away, so a test can drive a poll by hand and assert what a failure leaves behind instead of
+racing a poller to the row. Retry with backoff, a dead-letter path, ordering between two
+events on one Transfer, and archival of a table that only grows are deferred with reasoning
+in [`docs/deferred.md`](docs/deferred.md).
 
 ## Security: configured, not disabled
 

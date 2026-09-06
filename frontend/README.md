@@ -310,6 +310,62 @@ A Transfer is named in a key the way the URL names it, as a string, so the page'
 an event's key are one key. The conversion happens in `events.ts`, in the direction that
 cannot fail: `String(7)` is `'7'`, where `Number(id)` of a mistyped URL is `NaN`.
 
+## The Accounts screen
+
+`src/routes/accounts.tsx` renders `/accounts`: every Account the service holds, one row
+each, in the order `GET /api/accounts` sent them — oldest first, which is part of that
+endpoint's contract, so nothing here re-sorts it. Five columns, named the way the domain
+names them:
+
+| Column | What it holds |
+|---|---|
+| Account | the identifier the API and the transfer form both use |
+| Currency | the one this Account is denominated in, fixed at creation |
+| Balance | everything the Account holds |
+| Reserved Amount | what in-flight Transfers have already committed |
+| Available Balance | what can still be sent — the balance less what is reserved |
+
+The three figures arrive as whole counts of Minor Units and reach their cells through
+`formatAmount(minorUnits, currency)`, so an operator never has to think in Minor Units.
+**The Currency is named once per row, in its own column**, rather than appended to each of
+the three amounts: an Account is denominated once, and the API sends one `currency` beside
+three figures for exactly that reason. The amount cells are right-aligned and set in
+tabular figures (`src/routes/accounts.module.css`) so the digits line up down the column.
+
+**Nothing on this screen is computed.** The Available Balance in particular is the server's
+figure rather than a `balance − reserved` worked out here — it is what the backend's
+overdraft check tests against, and a second implementation of that rule in the browser
+would be the one that drifts.
+
+There are three states. *Loading* is a spinner; *empty* says the service is holding no
+Accounts rather than drawing an empty table; *error* is `problemToMessage(failure)`'s
+`title` and `body` — this app's wording for the failure, never the problem document's own —
+with a **Try again** button rendered when that function's `retryable` is true. That flag is
+advice to the person reading the screen, and is not the question `src/api/retry.ts` answers
+for the client, so a failure the client will not re-send by itself can still be worth a
+button. The button calls `refetch()`, so a press is one more attempt through the same rule.
+
+The query is filed under `queryKeys.accounts()`, which is the key `src/api/events.ts`
+invalidates on every terminal Transfer event — so a Transfer settling, being rejected or
+expiring refetches this list without the screen knowing anything about the stream.
+
+**It also refetches whenever the window regains focus**, and that is a designed property
+rather than an inherited one: live updates are scoped to the transfer submit flow, and this
+screen and the Transactions list are compensated with refetch-on-focus instead, so a list
+nobody was looking at is not silently out of date. `refetchOnWindowFocus: true` is therefore
+written out in `src/api/queryClient.ts` even though it is the library's default — and
+**there is no `staleTime`**, deliberately: a focus only refetches what is already stale, so
+any non-zero value would switch the behaviour off while leaving the declaration above it
+looking correct.
+
+`src/api/accounts.ts` is the single request behind all of it. On a refusal it throws the
+parsed problem document itself rather than an `Error`, because both modules downstream read
+the document: `problem.ts` branches on its `type` URN and `retry.ts` reads its `status`, and
+an `Error` would hide both behind a message.
+
+A row links nowhere. There is no `GET /api/accounts/{id}` to link to, and the endpoint and
+the `Location` header that would name it are deferred together in `../docs/deferred.md`.
+
 ## The API types, and when to regenerate them
 
 **Nothing here describes the API by hand.** `src/api/schema.gen.ts` is generated from the
@@ -431,8 +487,40 @@ rather than delivered because a real connection in either state delivers nothing
 spec that asserted a live update over a dropped one would be passing on an app a browser
 would leave stale.
 
-`e2e/smoke/` holds the one spec that proves the harness itself, against a fixture page that
-exists only because no screen fetches anything yet. It goes when the Transfer page carries
-the same sequence for real. `docs/design-decisions/37-playwright-harness.md` has the
-reasoning and the alternatives that were rejected — including the glob that looks right and
-breaks every spec at once.
+### Leaving the tab and coming back
+
+A screen that refetches on window focus needs a spec that can take the focus away and give
+it back, and a headless browser will not do that on its own: Chromium removed
+`Emulation.setPageVisibilityState`, so a page reports `visible` however many others are
+brought in front of it — `newPage()` followed by `bringToFront()` fires no
+`visibilitychange` at all, and the refetch under test simply never happens.
+`e2e/harness/focus.ts` stands in for it.
+
+```ts
+import { expect, refocus, setVisibility, test } from '../harness/test'
+```
+
+| Call | What it does |
+|---|---|
+| `refocus(page)` | the tab going away and coming back — one round trip, and one focus refetch |
+| `setVisibility(page, state)` | puts the page in `'hidden'` or `'visible'` and tells the app it moved |
+
+Both redefine `document.visibilityState` and then dispatch `visibilitychange` **on
+`window`**, which is where TanStack Query's focus manager listens — a `document` dispatch
+reaches nothing. The state moves before the event, because the manager reads it at the
+moment the event arrives. `refocus` goes through `hidden` first for the same kind of reason:
+`visible → visible` moves nothing the manager reads, so it only notices a return if it saw
+the leaving. `setVisibility` is exported on its own for the negative half — a tab that went
+away and *stayed* away, which must not refetch.
+
+The override is installed with `page.evaluate` and so does not survive a navigation. Each
+call reinstalls it, which matters for one shape of spec only: one that navigates between the
+hidden half and the visible half would find the page `visible` again on arrival.
+
+One directory per screen — `e2e/accounts/` is the first — plus `e2e/smoke/`, which holds the
+one spec that proves the harness itself, against a fixture page written when no screen
+fetched anything yet. That page goes when the Transfer screen carries the same sequence for
+real. `docs/design-decisions/37-playwright-harness.md` has the reasoning and the
+alternatives that were rejected — including the glob that looks right and breaks every spec
+at once — and `38-accounts-list-screen.md` has why a focus event has to be manufactured
+rather than emulated.

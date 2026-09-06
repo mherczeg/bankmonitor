@@ -603,3 +603,74 @@ them, would put our observability inside somebody else's service. §28 names thi
 exclusion as one of five mechanisms, and it is the one ticket 24 could not build
 or verify: a rule asserting that no filter matches `/mock/*` passes trivially
 when there are no filters, which is green for the wrong reason.
+
+---
+
+## Sorting and filtering the lists
+
+**Deferred.** The Accounts screen renders every Account in the order
+`GET /api/accounts` sends them — insertion order, oldest first — with no column
+sort, no search and no filter. The Transactions list will inherit the same shape
+from `GET /api/transfers`, which orders `created_at DESC, id DESC`.
+
+**Why deferred:** the demo dataset is a handful of Accounts and tens of
+Transfers, so a sort control would reorder a list the operator can already read
+in one screenful. Both endpoints return everything, and that is the half that
+makes building it now actively wrong: a client-side sort over an unpaged
+endpoint silently becomes a sort of *the first page* the day pagination arrives
+(above), which looks correct and answers a different question.
+
+**What it would take:** the ordering in the query rather than in the browser —
+`?sort=` on the endpoint — decided together with pagination so that the two
+agree on what the first page of a sorted list is. The Accounts endpoint's
+insertion order is currently part of its contract
+([ticket 10](design-decisions/10-list-accounts-and-seed.md)), so it is the
+contract that would move, not just the screen.
+
+---
+
+## The Accounts screen's loading state has no browser coverage
+
+**Deferred.** `/accounts` renders three states and the browser spec asserts two
+of them: the populated list, the empty service and both error shapes are
+covered, the spinner is not
+([ticket 38](design-decisions/38-accounts-list-screen.md)).
+
+**Why deferred:** the harness answers every scripted request immediately and
+offers no way to hold one open (design decisions §24,
+[ticket 37](design-decisions/37-playwright-harness.md)), so there is no
+deterministic moment at which the spinner exists. An assertion on it would be
+racing a local `route.fulfill` — green on a quiet machine, flaky on a loaded
+one — and adding a delay for it would put a waiting mechanism into the one seam
+whose design property is that no spec waits on a clock.
+
+**Residual risk, and it is small:** the loading branch is markup with no logic
+in it, rendered from the query's own `isPending`. What is unproven is that it
+appears at all — a mistyped condition would show nothing during the fetch and
+no test would notice.
+
+**What it would take:** a *held* answer rather than a delayed one — a scripted
+response the spec releases when it chooses, so the sequence stays ordered by the
+spec: assert the spinner, release the answer, assert the table. That keeps the
+"no timers" property intact, and it is the shape to build the first time a
+second screen wants the same assertion rather than for this one.
+
+---
+
+## Group separators on large amounts
+
+**Deferred.** `formatAmount` renders a million forints as `1000000`, never
+`1 000 000`: no thousands separator, no currency symbol, no locale
+(design decisions §16, [ticket 33](design-decisions/33-money-format-module.md)).
+
+**Why deferred:** the same string is a display value on the Accounts and
+Transactions lists and a *form* value on the create-Account and transfer forms,
+where it goes into a field an operator edits and must read back byte for byte.
+A separator would have to be stripped before parsing, and stripping it is not
+safe: `10.050` is ten thousand forints under `de-DE` and a tenth of a euro under
+`en-US`. Losslessness on two screens beats readability on one.
+
+**What it would take:** ticket 33 already names the honest shape — a second,
+display-only function beside `formatAmount`, rather than a flag on the one whose
+contract is that it round-trips. The Accounts table is the only caller that
+would ask for it today.

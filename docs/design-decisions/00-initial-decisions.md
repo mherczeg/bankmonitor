@@ -541,6 +541,10 @@ they navigate away.
 > event as JSON rather than as named SSE events, and it invalidates the accounts
 > list on all three — every terminal state releases the reservation, not only
 > settlement.
+> **[Ticket 38](38-accounts-list-screen.md)** builds the first of the two screens this
+> scope leaves outside liveness, and turns the compensation named above into a declared
+> property rather than an inherited default — with the absence of a `staleTime` as the
+> half that actually carries it.
 
 ---
 
@@ -693,6 +697,10 @@ backoff.
 > `['transfers', id]` makes the Transactions list the prefix of every Transfer page,
 > so invalidating the list refetches all of them. The list and the detail are
 > separate branches, and the keys live in `queryKeys.ts` rather than inline.
+> **[Ticket 38](38-accounts-list-screen.md)** is the first screen to read through the
+> client, filing its query under `queryKeys.accounts()` so a stream event's invalidation
+> reaches it, and writing `refetchOnWindowFocus` out rather than leaving the parenthesis
+> above to a library default an upgrade could change.
 
 ---
 
@@ -770,6 +778,9 @@ README justification.
 > **Wired in [ticket 31](31-frontend-toolchain.md)**: one CSS import, no JS
 > bundle in the output, and `noUncheckedIndexedAccess` rejected because it
 > types every CSS Module class as possibly `undefined`.
+> **[Ticket 38](38-accounts-list-screen.md)** spends the table from the vocabulary above
+> and rejects a card per Account — five aligned figures a row is what a table is for —
+> and opens the second CSS Module for the one rule that keeps the digits lined up.
 
 ---
 
@@ -846,6 +857,10 @@ render — deterministically, with no `waitForTimeout`. True E2E goes to
 > scripted answers in one mutable table behind one route handler rather than
 > re-registering a route per answer as step 2 above reads. It also names the glob that
 > swallows the app's own `src/api/` modules, reproduced rather than reasoned about.
+> **[Ticket 38](38-accounts-list-screen.md)** is the first screen to carry its own spec,
+> and found that "real focus and blur" is not free in a headless browser: Chromium removed
+> `Emulation.setPageVisibilityState`, so the harness redefines `document.visibilityState`
+> and dispatches `visibilitychange` on `window`, in that order.
 
 ---
 

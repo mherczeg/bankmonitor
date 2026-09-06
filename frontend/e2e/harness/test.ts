@@ -33,4 +33,5 @@ export const test = playwright.extend<{ api: ScriptedApi; fakeEventSource: void 
 
 export { expect } from '@playwright/test'
 export { eventStream } from './stream'
+export { refocus, setVisibility } from './focus'
 export { anAccount, aProblem, aTransfer } from './fixtures'

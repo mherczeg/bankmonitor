@@ -7,6 +7,15 @@ import { shouldRetryQuery } from './retry'
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { retry: shouldRetryQuery },
+    queries: {
+      retry: shouldRetryQuery,
+
+      // Declared rather than inherited: it is the designed compensation for the screens
+      // outside the live-update scope. See docs/design-decisions/38-accounts-list-screen.md.
+      refetchOnWindowFocus: true,
+
+      // No `staleTime` on purpose — any non-zero value silently defeats the line above,
+      // since a focus only refetches what is already stale.
+    },
   },
 })

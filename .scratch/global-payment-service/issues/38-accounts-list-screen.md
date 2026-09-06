@@ -16,9 +16,9 @@ Carries its own browser spec.
 
 **Blocked by:** 32, 33, 37
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Accounts render with balance and Available Balance, correctly formatted per Currency
-- [ ] Loading, empty and error states are all rendered, the error via the problem module
-- [ ] Returning focus to the window refetches
-- [ ] A browser spec covers the rendered list, the empty state and the focus refetch
+- [x] Accounts render with balance and Available Balance, correctly formatted per Currency
+- [x] Loading, empty and error states are all rendered, the error via the problem module
+- [x] Returning focus to the window refetches
+- [x] A browser spec covers the rendered list, the empty state and the focus refetch
